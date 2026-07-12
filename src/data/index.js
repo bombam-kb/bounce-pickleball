@@ -15,6 +15,13 @@ const T = todayISO()
 
 export const genRef = () => 'BNC-' + Math.random().toString(36).slice(2, 8).toUpperCase()
 
+// local datetime "YYYY-MM-DDTHH:mm" (not UTC — display is Thailand-local)
+export const nowLocalISO = () => {
+  const d = new Date()
+  const z = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`
+}
+
 // Peak = weekday 17:00-21:00, weekend 09:00-21:00
 export const isPeak = (dateISO, hour) => {
   const day = new Date(dateISO + 'T00:00:00').getDay()
@@ -64,38 +71,38 @@ export const MEMBERS = [
   {
     id: 'u1', name: 'แบม กันตี', email: 'bam@example.com', phone: '081-234-5678',
     channel: 'line', country: 'TH', lang: 'th', avatar: '🏓',
-    stamps: 7, bookingsYear: 23, credits: 150, suspended: false,
-    joined: addDays(T, -210),
+    stamps: 7, bookingsYear: 52, credits: 150, suspended: false,
+    joined: addDays(T, -210), birthday: '1998-' + T.slice(5), // Gold + วันเกิดวันนี้ — เดโม Birthday Promo
   },
   {
     id: 'u2', name: 'ต้น ธนกฤต', email: 'ton@example.com', phone: '089-111-2233',
     channel: 'line', country: 'TH', lang: 'th', avatar: '😎',
     stamps: 3, bookingsYear: 8, credits: 0, suspended: false,
-    joined: addDays(T, -90),
+    joined: addDays(T, -90), birthday: '2000-03-22',
   },
   {
     id: 'u3', name: 'Sarah Miller', email: 'sarah.m@example.com', phone: '',
     channel: 'google', country: 'US', lang: 'en', avatar: '🎾',
     stamps: 9, bookingsYear: 31, credits: 300, suspended: false,
-    joined: addDays(T, -160),
+    joined: addDays(T, -160), birthday: '1995-11-02',
   },
   {
     id: 'u4', name: 'เจน จิราพร', email: 'jane.j@example.com', phone: '086-555-7788',
     channel: 'email', country: 'TH', lang: 'th', avatar: '🌸',
     stamps: 2, bookingsYear: 4, credits: 0, suspended: false,
-    joined: addDays(T, -45),
+    joined: addDays(T, -45), birthday: null,
   },
   {
     id: 'u5', name: 'Kenji Watanabe', email: 'kenji.w@example.com', phone: '',
     channel: 'google', country: 'JP', lang: 'en', avatar: '🗻',
     stamps: 0, bookingsYear: 52, credits: 500, suspended: false,
-    joined: addDays(T, -300),
+    joined: addDays(T, -300), birthday: '1990-06-18',
   },
   {
     id: 'u6', name: 'ปอ ปวีณา', email: 'por.p@example.com', phone: '082-999-0011',
     channel: 'line', country: 'TH', lang: 'th', avatar: '🦋',
     stamps: 5, bookingsYear: 12, credits: 0, suspended: true,
-    joined: addDays(T, -120),
+    joined: addDays(T, -120), birthday: null,
   },
 ]
 
@@ -111,7 +118,8 @@ const B = (userId, courtId, dayOffset, hour, opts = {}) => {
     price, discount: opts.discount || 0, total: opts.total ?? price - (opts.discount || 0),
     payMethod: opts.payMethod || 'promptpay',
     status: opts.status || (dayOffset < 0 ? 'completed' : 'upcoming'),
-    createdAt: addDays(T, dayOffset - 2),
+    // pseudo transaction time, deterministic per-booking
+    createdAt: `${addDays(T, dayOffset - 2)}T${String(9 + (bid % 11)).padStart(2, '0')}:${String((bid * 7) % 60).padStart(2, '0')}`,
     voucherUsed: opts.voucherUsed || false,
   }
 }

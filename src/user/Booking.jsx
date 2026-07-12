@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { isPeak, todayISO } from '../data/index.js'
-import { Icon, Modal, hourLabel } from '../components/ui.jsx'
+import { Icon, Modal, hourLabel, printSlip } from '../components/ui.jsx'
 
 // step: summary → qr (if promptpay) → success
 export default function Booking({ sel, onDone, onBack }) {
@@ -69,7 +69,10 @@ export default function Booking({ sel, onDone, onBack }) {
             +1 🏓 {t('stampEarned', lang)}{result.voucherEarned ? ' → 🎁 Free Voucher!' : ''}
           </div>
         )}
-        <button className="btn btn-pine btn-full btn-lg mt-6" onClick={onDone}>{t('backHome', lang)}</button>
+        <button className="btn btn-full mt-6" onClick={() => printSlip(result.booking, court, user, lang)}>
+          <Icon name="download" size={16} /> {t('downloadSlip', lang)}
+        </button>
+        <button className="btn btn-pine btn-full btn-lg mt-3" onClick={onDone}>{t('backHome', lang)}</button>
       </div>
     )
   }

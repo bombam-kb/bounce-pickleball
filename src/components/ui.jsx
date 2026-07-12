@@ -22,6 +22,9 @@ const PATHS = {
   pencil: <><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19l-4 1z" /><path d="M14.5 6.5l3 3" /></>,
   trash: <><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6.5 7l1 13h9l1-13" /><path d="M10 11v5M14 11v5" /></>,
   block: <><circle cx="12" cy="12" r="9" /><path d="M5.7 5.7l12.6 12.6" /></>,
+  bell: <><path d="M6 9.5a6 6 0 0112 0c0 4.6 1.8 5.8 1.8 5.8H4.2S6 14.1 6 9.5" /><path d="M10.2 19.5a2 2 0 003.6 0" /></>,
+  trend: <><path d="M3 16l5.5-6.5 4 3.5L20 6" /><path d="M15.5 6H20v4.5" /><path d="M3 20h18" /></>,
+  cake: <><path d="M4 20h16v-7a2 2 0 00-2-2H6a2 2 0 00-2 2v7z" /><path d="M4 15.5c1.3 1.2 2.7 1.2 4 0s2.7-1.2 4 0 2.7 1.2 4 0 2.7-1.2 4 0" /><path d="M12 8v3M12 5.5a1.2 1.2 0 001.2-1.3C13.2 3 12 2 12 2s-1.2 1-1.2 2.2A1.2 1.2 0 0012 5.5z" /></>,
   coin: <><circle cx="12" cy="12" r="8.5" /><path d="M12 8v8M9.5 10c0-1 1-1.8 2.5-1.8s2.5.7 2.5 1.7c0 2.3-5 1.9-5 4.1 0 1 1 1.8 2.5 1.8s2.5-.8 2.5-1.8" /></>,
 }
 
@@ -100,6 +103,62 @@ export const ChannelChip = ({ channel }) => {
 }
 
 export const hourLabel = (h) => `${String(h).padStart(2, '0')}:00`
+
+// ── PDF booking slip — printable window; browsers save via "Save as PDF" ──
+export const printSlip = (b, court, member, lang) => {
+  const th = lang === 'th'
+  const w = window.open('', '_blank', 'width=420,height=680')
+  if (!w) { alert(th ? 'เบราว์เซอร์บล็อกหน้าต่างใหม่ — กรุณาอนุญาต popup' : 'Popup blocked — please allow popups'); return }
+  const hourLbl = `${String(b.hour).padStart(2, '0')}:00`
+  const payLabel = { promptpay: 'QR PromptPay', card: th ? 'บัตรเครดิต/เดบิต' : 'Credit/Debit', credits: 'Credits', voucher: 'Free Voucher' }[b.payMethod] || b.payMethod
+  w.document.write(`<!doctype html><html lang="${lang}"><head><meta charset="utf-8">
+<title>${b.ref} — Bounce Pickleball House</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@500;700;800&family=Anuphan:wght@400;600&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Anuphan', Tahoma, sans-serif; color: #101B14; padding: 24px; background: #fff; }
+  .slip { max-width: 360px; margin: 0 auto; border: 2px solid #101B14; border-radius: 16px; overflow: hidden; }
+  .head { background: #16382B; color: #C6F135; text-align: center; padding: 18px 16px 14px; font-family: 'Prompt', Tahoma, sans-serif; }
+  .head h1 { font-size: 18px; letter-spacing: 1px; }
+  .head small { color: #F7F4EA; font-size: 10px; letter-spacing: 3px; }
+  .ref { text-align: center; padding: 14px; border-bottom: 2px dashed #B9B4A2; }
+  .ref .label { font-size: 11px; color: #8A968E; }
+  .ref .code { font-family: 'Prompt', monospace; font-size: 24px; font-weight: 800; letter-spacing: 1px; }
+  .rows { padding: 14px 18px; }
+  .row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13.5px; border-bottom: 1px solid #EFECE0; }
+  .row:last-child { border-bottom: none; }
+  .row .k { color: #8A968E; }
+  .row .v { font-weight: 600; text-align: right; }
+  .total { background: #C6F135; display: flex; justify-content: space-between; padding: 12px 18px; font-family: 'Prompt', Tahoma, sans-serif; font-weight: 800; font-size: 17px; border-top: 2px solid #101B14; }
+  .foot { text-align: center; padding: 12px; font-size: 10.5px; color: #8A968E; }
+  @media print { body { padding: 0 } .noprint { display: none } }
+  .noprint { display: block; margin: 16px auto 0; padding: 10px 24px; font-family: 'Prompt', Tahoma, sans-serif; font-weight: 700; border: 2px solid #101B14; border-radius: 999px; background: #C6F135; cursor: pointer; }
+</style></head><body>
+<div class="slip">
+  <div class="head"><h1>🏓 BOUNCE</h1><small>PICKLEBALL HOUSE</small></div>
+  <div class="ref"><div class="label">${th ? 'หมายเลขการจอง' : 'Booking Reference'}</div><div class="code">${b.ref}</div></div>
+  <div class="rows">
+    <div class="row"><span class="k">${th ? 'ผู้จอง' : 'Customer'}</span><span class="v">${member?.name ?? '—'}</span></div>
+    <div class="row"><span class="k">${th ? 'สนาม' : 'Court'}</span><span class="v">${th ? (court?.nameTh ?? '') : (court?.name ?? '')}</span></div>
+    <div class="row"><span class="k">${th ? 'วันที่' : 'Date'}</span><span class="v">${b.date}</span></div>
+    <div class="row"><span class="k">${th ? 'เวลา' : 'Time'}</span><span class="v">${hourLbl} · ${b.duration} ${th ? 'นาที' : 'min'}</span></div>
+    <div class="row"><span class="k">${th ? 'ชำระโดย' : 'Paid via'}</span><span class="v">${payLabel}</span></div>
+    ${b.discount ? `<div class="row"><span class="k">${th ? 'ส่วนลด' : 'Discount'}</span><span class="v">−฿${b.discount}</span></div>` : ''}
+  </div>
+  <div class="total"><span>${th ? 'ยอดชำระ' : 'Total'}</span><span>${b.total === 0 ? (th ? 'ฟรี' : 'FREE') : '฿' + b.total}</span></div>
+  <div class="foot">${th ? 'แสดงใบนี้ที่เคาน์เตอร์ก่อนลงสนาม · ขอบคุณที่ใช้บริการ' : 'Show this slip at the counter · Thank you!'}</div>
+</div>
+<button class="noprint">🖨 ${th ? 'พิมพ์ / บันทึกเป็น PDF' : 'Print / Save as PDF'}</button>
+</body></html>`)
+  w.document.close()
+  // bind from opener — inline onclick would be blocked by CSP (script-src 'self')
+  setTimeout(() => {
+    try {
+      w.document.querySelector('.noprint')?.addEventListener('click', () => w.print())
+      w.focus(); w.print()
+    } catch { /* user closed */ }
+  }, 450)
+}
 
 // ── pagination ────────────────────────────────────────────────────────────
 // const pager = usePager(filteredItems, 10) → render pager.slice, then <Pager {...pager} lang={lang} />

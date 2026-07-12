@@ -71,6 +71,7 @@ export default function Membership() {
                     : expired ? (lang === 'th' ? 'หมดอายุแล้ว' : 'Expired')
                     : `${t('expires', lang)} ${fmtDate(v.expiry, lang)}`}
                   {v.source === 'manual' && ' · ' + (lang === 'th' ? 'จากทีมงาน' : 'from staff')}
+                  {v.source === 'birthday' && ' · 🎂 ' + (lang === 'th' ? 'ของขวัญวันเกิด' : 'birthday gift')}
                 </div>
               </div>
             </div>

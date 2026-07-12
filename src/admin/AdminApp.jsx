@@ -7,6 +7,7 @@ import Courts from './Courts.jsx'
 import Bookings from './Bookings.jsx'
 import Promos from './Promos.jsx'
 import Members from './Members.jsx'
+import Analytics from './Analytics.jsx'
 import Settings from './Settings.jsx'
 
 const SCREENS = [
@@ -15,6 +16,7 @@ const SCREENS = [
   { key: 'bookingMgmt', icon: 'calendar', comp: Bookings },
   { key: 'promoMgmt', icon: 'tag', comp: Promos },
   { key: 'memberMgmt', icon: 'users', comp: Members },
+  { key: 'analytics', icon: 'trend', comp: Analytics },
   { key: 'settings', icon: 'gear', comp: Settings },
 ]
 

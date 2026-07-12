@@ -63,9 +63,18 @@ src/
 └── admin/           # AdminApp, Dashboard, Courts, Bookings, Promos, Members, Settings
 ```
 
-## ขั้นต่อไป (ตาม Roadmap ใน SRS)
+## Phase 2–3 ที่ทำแล้ว (demo-grade)
 
-- ต่อ backend จริง + LINE LIFF / Google OAuth จริง
-- Payment Gateway PromptPay จริง (ตอนนี้ mock ยืนยันอัตโนมัติ)
-- LINE OA Notification, Email SMTP
+- **Email Login เต็ม flow** — สมัคร / ยืนยัน OTP 6 หลัก / เข้าสู่ระบบ / ลืมรหัสผ่าน+รีเซ็ต (demo แสดง OTP บนจอแทนการส่ง email จริง, รหัสผ่าน hash ด้วย SHA-256 ฝั่ง client — ระบบจริงต้อง hash ฝั่ง server)
+- **Analytics & Member Stats** (admin → รายงาน & สถิติ): รายได้ 30 วัน, รายได้แยกสนาม, Peak/Off-Peak, ความนิยมรายชั่วโมง, สมาชิกตาม Tier/ช่องทาง, Top 5 ลูกค้า, สถิติ Voucher/Promo
+- **PDF Booking Slip** — ใบจองพิมพ์ได้/บันทึกเป็น PDF จากหน้าจองสำเร็จและการจองของฉัน
+- **Notifications** — กระดิ่งแจ้งเตือนในแอป (จองสำเร็จ, แสตมป์, voucher, ยกเลิก) + Browser Notification API เมื่อผู้ใช้อนุญาต
+- **Birthday Promo** — Gold member รับ Free Voucher อัตโนมัติในวันเกิด (ปีละครั้ง)
+- **Performance** — code splitting: ฝั่งลูกค้า/แอดมินแยก bundle (ลูกค้าโหลด ~8KB gzip เฉพาะส่วนตัวเอง)
+
+## ขั้นต่อไป (ต้องมี backend จริง)
+
+- LINE LIFF / Google OAuth จริง + ฐานข้อมูลกลาง (แนะนำเริ่ม LINE Login ก่อน — ฟรี ตรงกลุ่มคนไทย)
+- Email ยืนยันตัวตนจริง: ใช้ Firebase Auth หรือ Supabase Auth (ฟรี ไม่ต้องจ่ายค่า email service)
+- Payment Gateway PromptPay จริง, LINE OA Notification
 - Open Court matching (โครง UI toggle มีแล้ว)

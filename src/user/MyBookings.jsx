@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { todayISO } from '../data/index.js'
-import { StatusChip, hourLabel, Icon, usePager, Pager } from '../components/ui.jsx'
+import { StatusChip, hourLabel, Icon, usePager, Pager, printSlip } from '../components/ui.jsx'
 
 export default function MyBookings() {
   const { lang, user, bookings, courts, settings, cancelBooking } = useStore()
@@ -58,8 +58,8 @@ export default function MyBookings() {
                     {b.voucherUsed ? '🎁 ' + t('free', lang) : `฿${b.total}`}
                   </span>
                   <div className="row gap-2">
-                    {b.status === 'completed' && (
-                      <button className="btn btn-sm btn-ghost" onClick={() => alert('📄 PDF slip — demo')}>
+                    {b.status !== 'cancelled' && (
+                      <button className="btn btn-sm btn-ghost" onClick={() => printSlip(b, court, user, lang)}>
                         <Icon name="download" size={14} /> {t('downloadSlip', lang)}
                       </button>
                     )}
