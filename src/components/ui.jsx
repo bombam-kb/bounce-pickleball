@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { TIERS, tierOf } from '../data/index.js'
+import { TIERS, tierOf, todayISO, addDays } from '../data/index.js'
 
 const PATHS = {
   ball: <><circle cx="12" cy="12" r="9" /><circle cx="9" cy="9.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="14.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="13.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="15.5" cy="14.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="8.5" cy="15" r="1.2" fill="currentColor" stroke="none" /></>,
@@ -47,11 +47,21 @@ export const Modal = ({ onClose, children }) => (
   </div>
 )
 
+// darken a hex color so white text stays readable on it regardless of the
+// surrounding card (light admin tables AND the dark pine membership header)
+const shade = (hex, amt) => {
+  const n = parseInt(hex.slice(1), 16)
+  const r = Math.round(((n >> 16) & 255) * (1 - amt))
+  const g = Math.round(((n >> 8) & 255) * (1 - amt))
+  const b = Math.round((n & 255) * (1 - amt))
+  return `rgb(${r}, ${g}, ${b})`
+}
+
 export const TierBadge = ({ bookingsYear, size = 'md' }) => {
   const tier = tierOf(bookingsYear)
   return (
     <span className="chip" style={{
-      background: tier.color + '22', borderColor: tier.color, color: '#3a3a2e',
+      background: shade(tier.color, 0.25), borderColor: 'var(--stroke)', color: '#fff',
       fontSize: size === 'lg' ? 14 : 12.5,
     }}>
       {tier.emoji} {tier.name}
@@ -86,6 +96,7 @@ export const StatusChip = ({ status, lang }) => {
   const map = {
     upcoming: ['chip-blue', lang === 'th' ? 'กำลังมาถึง' : 'Upcoming'],
     completed: ['chip-green', lang === 'th' ? 'เสร็จสิ้น' : 'Completed'],
+    no_show: ['chip-amber', lang === 'th' ? 'ไม่มาใช้บริการ' : 'No-show'],
     cancelled: ['chip-red', lang === 'th' ? 'ยกเลิก' : 'Cancelled'],
   }
   const [cls, label] = map[status] || ['chip-grey', status]
@@ -206,6 +217,55 @@ export const Pager = ({ page, pages, setPage, total, perPage, lang = 'th' }) => 
         )}
         <button className="pager-btn" disabled={page === pages} onClick={() => setPage(page + 1)} aria-label="Next">›</button>
       </div>
+    </div>
+  )
+}
+
+// ── date-range filter (Dashboard / Analytics) ──────────────────────────────
+// const range = useDateRange('30d') → range.from/range.to (inclusive ISO dates)
+// render <DateRangeBar range={range} lang={lang} /> to let the admin pick it
+export const useDateRange = (initialPreset = '30d') => {
+  const [preset, setPreset] = useState(initialPreset) // today | 7d | 30d | month | custom
+  const [customFrom, setCustomFrom] = useState(() => addDays(todayISO(), -29))
+  const [customTo, setCustomTo] = useState(todayISO())
+
+  const today = todayISO()
+  let from, to
+  if (preset === 'today') { from = today; to = today }
+  else if (preset === '7d') { from = addDays(today, -6); to = today }
+  else if (preset === '30d') { from = addDays(today, -29); to = today }
+  else if (preset === 'month') { from = today.slice(0, 8) + '01'; to = today }
+  else { from = customFrom; to = customTo }
+  if (from > to) [from, to] = [to, from] // guard a swapped custom range
+
+  return { preset, setPreset, from, to, customFrom, setCustomFrom, customTo, setCustomTo }
+}
+
+export const DateRangeBar = ({ range, lang = 'th' }) => {
+  const th = lang === 'th'
+  const PRESETS = [
+    { key: 'today', label: th ? 'วันนี้' : 'Today' },
+    { key: '7d', label: th ? '7 วัน' : '7 days' },
+    { key: '30d', label: th ? '30 วัน' : '30 days' },
+    { key: 'month', label: th ? 'เดือนนี้' : 'This month' },
+    { key: 'custom', label: th ? 'กำหนดเอง' : 'Custom' },
+  ]
+  return (
+    <div className="row wrap gap-2" style={{ alignItems: 'center', minWidth: 0 }}>
+      {PRESETS.map((p) => (
+        <button key={p.key} className={`tab ${range.preset === p.key ? 'on' : ''}`} onClick={() => range.setPreset(p.key)}>
+          {p.label}
+        </button>
+      ))}
+      {range.preset === 'custom' && (
+        <div className="row gap-2 wrap">
+          <input className="input" type="date" style={{ maxWidth: 150 }} value={range.customFrom}
+            max={range.customTo} onChange={(e) => range.setCustomFrom(e.target.value)} />
+          <span className="tiny">–</span>
+          <input className="input" type="date" style={{ maxWidth: 150 }} value={range.customTo}
+            min={range.customFrom} onChange={(e) => range.setCustomTo(e.target.value)} />
+        </div>
+      )}
     </div>
   )
 }

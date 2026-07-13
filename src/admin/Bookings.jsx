@@ -10,12 +10,25 @@ const fmtCreated = (iso, lang) => {
   return fmtDate(d, lang) + (tm ? ` · ${tm.slice(0, 5)}` : '')
 }
 
+// slot start time has already passed but nobody confirmed attendance yet
+const isPending = (b) => {
+  if (b.status !== 'upcoming') return false
+  const slot = new Date(`${b.date}T00:00:00`)
+  slot.setHours(b.hour)
+  return slot < new Date()
+}
+
 export default function Bookings() {
-  const { lang, bookings, courts, members, cancelBooking, logAdmin } = useStore()
+  const {
+    lang, bookings, courts, members, cancelBooking, logAdmin,
+    checkInBooking, markNoShow, revertBookingStatus,
+  } = useStore()
   const [q, setQ] = useState('')
   const [fCourt, setFCourt] = useState('all')
   const [fStatus, setFStatus] = useState('all')
-  const [fDate, setFDate] = useState('')
+  const [fSlotDate, setFSlotDate] = useState('')       // วันที่จอง (slot date)
+  const [fCreatedDate, setFCreatedDate] = useState('') // วันที่ทำรายการ (transaction date)
+  const [pendingOnly, setPendingOnly] = useState(false)
   const [sort, setSort] = useState({ key: 'created', dir: 'desc' }) // newest transactions first
 
   const memberName = (b) => members.find((x) => x.id === b.userId)?.name ?? ''
@@ -35,10 +48,14 @@ export default function Bookings() {
   const toggleSort = (key) => setSort((s) =>
     s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' })
 
+  const pendingCount = bookings.filter(isPending).length
+
   const rows = bookings
     .filter((b) => fCourt === 'all' || b.courtId === fCourt)
     .filter((b) => fStatus === 'all' || b.status === fStatus)
-    .filter((b) => !fDate || b.date === fDate)
+    .filter((b) => !fSlotDate || b.date === fSlotDate)
+    .filter((b) => !fCreatedDate || (b.createdAt ?? '').slice(0, 10) === fCreatedDate)
+    .filter((b) => !pendingOnly || isPending(b))
     .filter((b) => !q || (memberName(b) + b.ref).toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => {
       const get = SORTERS[sort.key]
@@ -51,10 +68,10 @@ export default function Bookings() {
 
   const exportCsv = () => {
     downloadCSV('bounce-bookings.csv', [
-      ['Ref', 'Customer', 'Court', 'Slot Date', 'Slot Time', 'Duration', 'Created At', 'Price', 'Discount', 'Total', 'Payment', 'Status'],
+      ['Ref', 'Customer', 'Court', 'Slot Date', 'Slot Time', 'Duration', 'Created At', 'Price', 'Discount', 'Total', 'Payment', 'Status', 'Checked In'],
       ...rows.map((b) => {
         const c = courts.find((x) => x.id === b.courtId)
-        return [b.ref, memberName(b), c?.name, b.date, hourLabel(b.hour), b.duration, b.createdAt, b.price, b.discount, b.total, b.payMethod, b.status]
+        return [b.ref, memberName(b), c?.name, b.date, hourLabel(b.hour), b.duration, b.createdAt, b.price, b.discount, b.total, b.payMethod, b.status, b.checkedIn ? 'yes' : 'no']
       }),
     ])
     logAdmin('Export bookings CSV')
@@ -68,6 +85,35 @@ export default function Bookings() {
     </th>
   )
 
+  const CheckInCell = ({ b }) => {
+    if (b.status === 'upcoming') {
+      const pending = isPending(b)
+      return (
+        <div className="col gap-1">
+          {pending && <span className="chip chip-amber" style={{ fontSize: 10.5 }}>⏰ {t('pendingCheckIn', lang)}</span>}
+          <div className="row gap-2" style={{ whiteSpace: 'nowrap' }}>
+            <button className="btn btn-sm btn-outline-green" title={t('confirmArrived', lang)}
+              onClick={() => confirm(`${t('confirmArrivedAsk', lang)} (${b.ref})`) && checkInBooking(b.id)}>
+              <Icon name="check" size={12} /> {t('checkedInLabel', lang)}
+            </button>
+            <button className="btn btn-sm btn-outline-red" title={t('markNoShowBtn', lang)}
+              onClick={() => confirm(`${t('markNoShowConfirm', lang)} (${b.ref})`) && markNoShow(b.id)}>
+              <Icon name="x" size={12} /> {t('markNoShowBtn', lang)}
+            </button>
+          </div>
+        </div>
+      )
+    }
+    if ((b.status === 'completed' && b.checkedIn) || b.status === 'no_show') {
+      return (
+        <button className="btn btn-sm btn-ghost" onClick={() => revertBookingStatus(b.id)}>
+          ↺ {t('undoAction', lang)}
+        </button>
+      )
+    }
+    return <span className="tiny muted">—</span>
+  }
+
   return (
     <div>
       <div className="row between wrap gap-3">
@@ -75,20 +121,43 @@ export default function Bookings() {
         <button className="btn" onClick={exportCsv}><Icon name="download" size={16} /> {t('exportCsv', lang)}</button>
       </div>
 
-      <div className="row wrap gap-2 mt-4">
-        <input className="input" style={{ maxWidth: 220 }} maxLength={60} placeholder={`${t('search', lang)}…`}
-          value={q} onChange={(e) => setQ(e.target.value)} />
-        <select className="select" style={{ maxWidth: 170 }} value={fCourt} onChange={(e) => setFCourt(e.target.value)}>
-          <option value="all">{t('all', lang)} — {t('location', lang)}</option>
-          {courts.map((c) => <option key={c.id} value={c.id}>{lang === 'th' ? c.nameTh : c.name}</option>)}
-        </select>
-        <select className="select" style={{ maxWidth: 150 }} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
-          <option value="all">{t('all', lang)} — {t('status', lang)}</option>
-          <option value="upcoming">{t('upcoming', lang)}</option>
-          <option value="completed">{t('completed', lang)}</option>
-          <option value="cancelled">{t('cancelled', lang)}</option>
-        </select>
-        <input className="input" style={{ maxWidth: 160 }} type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} />
+      <div className="row wrap gap-3 mt-4" style={{ alignItems: 'flex-end' }}>
+        <div>
+          <label className="label">{t('search', lang)}</label>
+          <input className="input" style={{ maxWidth: 220 }} maxLength={60} placeholder={`${t('search', lang)}…`}
+            value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">{t('location', lang)}</label>
+          <select className="select" style={{ maxWidth: 170 }} value={fCourt} onChange={(e) => setFCourt(e.target.value)}>
+            <option value="all">{t('all', lang)}</option>
+            {courts.map((c) => <option key={c.id} value={c.id}>{lang === 'th' ? c.nameTh : c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">{t('status', lang)}</label>
+          <select className="select" style={{ maxWidth: 150 }} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
+            <option value="all">{t('all', lang)}</option>
+            <option value="upcoming">{t('upcoming', lang)}</option>
+            <option value="completed">{t('completed', lang)}</option>
+            <option value="no_show">{t('noShowStatus', lang)}</option>
+            <option value="cancelled">{t('cancelled', lang)}</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">{t('filterSlotDate', lang)}</label>
+          <input className="input" style={{ maxWidth: 160 }} type="date" value={fSlotDate} onChange={(e) => setFSlotDate(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">{t('filterCreatedDate', lang)}</label>
+          <input className="input" style={{ maxWidth: 160 }} type="date" value={fCreatedDate} onChange={(e) => setFCreatedDate(e.target.value)} />
+        </div>
+        {pendingCount > 0 && (
+          <button className={`chip ${pendingOnly ? 'chip-pine' : 'chip-amber'}`} style={{ cursor: 'pointer' }}
+            onClick={() => setPendingOnly((v) => !v)}>
+            ⏰ {pendingCount} {t('showPendingOnly', lang)}
+          </button>
+        )}
       </div>
 
       <div className="card mt-4">
@@ -102,13 +171,14 @@ export default function Bookings() {
               <Th k="created">{t('createdAtCol', lang)}</Th>
               <Th k="total">฿</Th>
               <Th k="status">{t('status', lang)}</Th>
+              <th title={t('checkInCol', lang)}>{t('checkInCol', lang)}</th>
               <th></th>
             </tr></thead>
             <tbody>
               {pager.slice.map((b) => {
                 const m = members.find((x) => x.id === b.userId)
                 return (
-                  <tr key={b.id}>
+                  <tr key={b.id} style={isPending(b) ? { background: 'rgba(232,161,59,0.08)' } : undefined}>
                     <td className="num">{b.ref}</td>
                     <td>{m?.avatar} {m?.name}</td>
                     <td>{courtName(b) || '—'}</td>
@@ -116,6 +186,7 @@ export default function Bookings() {
                     <td className="tiny" style={{ whiteSpace: 'nowrap' }}>{fmtCreated(b.createdAt, lang)}</td>
                     <td className="num">{b.voucherUsed ? '🎁 0' : b.total}</td>
                     <td><StatusChip status={b.status} lang={lang} /></td>
+                    <td><CheckInCell b={b} /></td>
                     <td>
                       {b.status === 'upcoming' && (
                         <button className="btn btn-sm btn-danger"
@@ -127,7 +198,7 @@ export default function Bookings() {
                   </tr>
                 )
               })}
-              {rows.length === 0 && <tr><td colSpan={8} className="tc muted">—</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={9} className="tc muted">—</td></tr>}
             </tbody>
           </table>
         </div>

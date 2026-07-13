@@ -15,7 +15,8 @@ export default function MyBookings() {
       const past = b.date < todayISO() || (b.date === todayISO() && b.hour < new Date().getHours())
       return { ...b, status: b.status === 'upcoming' && past ? 'completed' : b.status }
     })
-    .filter((b) => b.status === tab)
+    // no_show is an admin-side distinction — customers see it grouped under "completed"
+    .filter((b) => (tab === 'completed' ? (b.status === 'completed' || b.status === 'no_show') : b.status === tab))
     .sort((a, b) => (tab === 'upcoming' ? 1 : -1) * ((a.date + a.hour) < (b.date + b.hour) ? -1 : 1))
 
   const pager = usePager(mine, 5)

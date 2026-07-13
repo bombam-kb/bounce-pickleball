@@ -200,7 +200,7 @@ export function StoreProvider({ children }) {
     const booking = {
       id: nid('b'), ref: genRef(), userId: user.id, courtId, date, hour, duration,
       price: base, discount, total, payMethod: voucherId ? 'voucher' : payMethod,
-      status: 'upcoming', createdAt: nowLocalISO(), voucherUsed: !!voucherId,
+      status: 'upcoming', checkedIn: false, createdAt: nowLocalISO(), voucherUsed: !!voucherId,
     }
     setBookings((bs) => [booking, ...bs])
     if (voucherId) {
@@ -266,6 +266,35 @@ export function StoreProvider({ children }) {
     setAdminLog((l) => [{ id: nid('a'), date: new Date().toLocaleString(), action }, ...l])
   }, [])
 
+  // ── court check-in — confirms the customer actually showed up, or marks a no-show ──
+  // Stamps are NOT touched here: per the loyalty rules stamps are earned on successful
+  // payment, not on attendance, so check-in/no-show only changes booking status.
+  const checkInBooking = useCallback((bookingId) => {
+    const bk = bookings.find((b) => b.id === bookingId)
+    if (!bk || bk.status !== 'upcoming') return
+    setBookings((bs) => bs.map((b) => (b.id === bookingId ? { ...b, status: 'completed', checkedIn: true } : b)))
+    logAdmin(`Check-in confirmed — ${bk.ref} (customer arrived)`)
+  }, [bookings, logAdmin])
+
+  const markNoShow = useCallback((bookingId) => {
+    const bk = bookings.find((b) => b.id === bookingId)
+    if (!bk || bk.status !== 'upcoming') return
+    setBookings((bs) => bs.map((b) => (b.id === bookingId ? { ...b, status: 'no_show', checkedIn: false } : b)))
+    logAdmin(`Marked no-show — ${bk.ref}`)
+  }, [bookings, logAdmin])
+
+  // undo a mistaken check-in/no-show click — only for admin-confirmed transitions,
+  // not for bookings that were merely seeded/auto-completed by date
+  const revertBookingStatus = useCallback((bookingId) => {
+    const bk = bookings.find((b) => b.id === bookingId)
+    if (!bk) return
+    const wasNoShow = bk.status === 'no_show'
+    const wasCheckedIn = bk.status === 'completed' && bk.checkedIn
+    if (!wasNoShow && !wasCheckedIn) return
+    setBookings((bs) => bs.map((b) => (b.id === bookingId ? { ...b, status: 'upcoming', checkedIn: false } : b)))
+    logAdmin(`Reverted ${wasNoShow ? 'no-show' : 'check-in'} — ${bk.ref}`)
+  }, [bookings, logAdmin])
+
   const adminAdjustStamps = useCallback((userId, delta, reason) => {
     addStamp(userId, `Admin adjust: ${reason}`, delta, 'admin')
     logAdmin(`Adjust stamps ${delta > 0 ? '+' : ''}${delta} for ${userId} — ${reason}`)
@@ -289,6 +318,7 @@ export function StoreProvider({ children }) {
     notifications, notify, markNotifsRead,
     slotStatus, createBooking, cancelBooking, validatePromo,
     adminAdjustStamps, adminIssueVoucher,
+    checkInBooking, markNoShow, revertBookingStatus,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

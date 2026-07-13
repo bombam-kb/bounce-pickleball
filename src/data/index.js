@@ -106,18 +106,21 @@ export const MEMBERS = [
   },
 ]
 
-// Seed bookings around today. status: upcoming | completed | cancelled
+// Seed bookings around today. status: upcoming | completed | no_show | cancelled
 let bid = 0
 const B = (userId, courtId, dayOffset, hour, opts = {}) => {
   const date = addDays(T, dayOffset)
   const court = COURTS.find((c) => c.id === courtId)
   const price = isPeak(date, hour) ? court.pricePeak : court.priceOff
+  const status = opts.status || (dayOffset < 0 ? 'completed' : 'upcoming')
   return {
     id: 'b' + ++bid, ref: 'BNC-' + String(1000 + bid),
     userId, courtId, date, hour, duration: 60,
     price, discount: opts.discount || 0, total: opts.total ?? price - (opts.discount || 0),
     payMethod: opts.payMethod || 'promptpay',
-    status: opts.status || (dayOffset < 0 ? 'completed' : 'upcoming'),
+    status,
+    // admin explicitly confirmed the customer showed up (distinct from status='completed' inferred from date alone)
+    checkedIn: opts.checkedIn ?? status === 'completed',
     // pseudo transaction time, deterministic per-booking
     createdAt: `${addDays(T, dayOffset - 2)}T${String(9 + (bid % 11)).padStart(2, '0')}:${String((bid * 7) % 60).padStart(2, '0')}`,
     voucherUsed: opts.voucherUsed || false,

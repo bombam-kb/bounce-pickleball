@@ -2,7 +2,9 @@ import React from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { todayISO, addDays } from '../data/index.js'
-import { hourLabel, StatusChip } from '../components/ui.jsx'
+import { hourLabel, StatusChip, useDateRange, DateRangeBar } from '../components/ui.jsx'
+
+const daysBetween = (from, to) => Math.round((new Date(to) - new Date(from)) / 86400000) + 1
 
 export default function Dashboard() {
   const { lang, bookings, courts, members } = useStore()
@@ -16,10 +18,17 @@ export default function Dashboard() {
   const monthBk = live.filter((b) => b.date >= monthAgo && b.date <= T)
   const monthRevenue = monthBk.reduce((s, b) => s + b.total, 0)
 
-  // last 7 days revenue
-  const days = Array.from({ length: 7 }, (_, i) => addDays(T, i - 6))
+  // date-range-driven daily revenue chart — defaults to last 7 days, but the
+  // admin can pick any range; long ranges are clipped to the latest 31 days
+  const range = useDateRange('7d')
+  const totalSpan = daysBetween(range.from, range.to)
+  const chartDays = Math.min(totalSpan, 31)
+  const clipped = totalSpan > chartDays
+  const days = Array.from({ length: chartDays }, (_, i) => addDays(range.to, i - (chartDays - 1)))
   const daily = days.map((d) => live.filter((b) => b.date === d).reduce((s, b) => s + b.total, 0))
   const max = Math.max(...daily, 1)
+  const rangeBk = live.filter((b) => b.date >= range.from && b.date <= range.to)
+  const rangeRevenue = rangeBk.reduce((s, b) => s + b.total, 0)
 
   const nowHour = new Date().getHours()
   const upcomingToday = todayBk
@@ -41,8 +50,15 @@ export default function Dashboard() {
 
       <div className="a-grid-2 mt-4">
         <div className="card pad-5">
-          <h3 style={{ fontSize: 15 }}>{t('revenueChart', lang)}</h3>
-          <div className="bars mt-2">
+          <div className="row between wrap gap-2">
+            <h3 style={{ fontSize: 15 }}>{t('revenueChart', lang)}</h3>
+            <div className="row gap-2 wrap">
+              <span className="chip chip-lime num">฿{rangeRevenue.toLocaleString()}</span>
+              <span className="chip chip-grey num">{rangeBk.length} {lang === 'th' ? 'รายการ' : 'bookings'}</span>
+            </div>
+          </div>
+          <div className="mt-2"><DateRangeBar range={range} lang={lang} /></div>
+          <div className="bars mt-3">
             {days.map((d, i) => (
               <div className="bar-col" key={d}>
                 <span className="tiny num">฿{daily[i]}</span>
@@ -52,6 +68,7 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+          {clipped && <p className="tiny muted mt-2">{t('rangeClipped', lang)}</p>}
         </div>
 
         <div className="card pad-5">
