@@ -170,6 +170,7 @@ export const ChannelChip = ({ channel }) => {
   const map = {
     line: ['#06C755', 'LINE'],
     email: ['#8A968E', 'Email'],
+    guest: ['#C99A2E', 'Guest'],
   }
   const [color, label] = map[channel] || ['#8A968E', channel]
   return <span className="chip" style={{ borderColor: color, color, background: color + '14' }}>{label}</span>

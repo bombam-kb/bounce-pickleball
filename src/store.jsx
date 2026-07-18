@@ -459,40 +459,57 @@ export function StoreProvider({ children }) {
   // ── admin manual booking — for phone-in / walk-in customers. Books one or
   //    more slots (any court/date/hour) for a member in a single batch, with
   //    one stamp per booking and any earned free-vouchers. ──
-  const adminCreateMultiBooking = useCallback(async ({ userId, items, duration = 60 }) => {
+  // pass either `userId` (existing member) or `guest` ({name, phone}) for a
+  // walk-in with no account — the guest gets a lightweight member record.
+  const adminCreateMultiBooking = useCallback(async ({ userId, guest, items, duration = 60 }) => {
     if (!items.length) return []
-    const member = members.find((m) => m.id === userId)
+    const uid = userId || (guest ? nid('u') : null)
+    if (!uid) return []
+    const existing = userId ? members.find((m) => m.id === userId) : null
+
+    const batch = writeBatch(db)
     const createdAt = nowLocalISO()
     const newBookings = items.map((it) => {
       const court = courts.find((c) => c.id === it.courtId)
       const base = (isPeak(it.date, it.hour) ? court.pricePeak : court.priceOff) * (duration / 60)
       return {
-        id: nid('b'), ref: genRef(), userId, courtId: it.courtId, date: it.date, hour: it.hour, duration,
+        id: nid('b'), ref: genRef(), userId: uid, courtId: it.courtId, date: it.date, hour: it.hour, duration,
         price: base, discount: 0, total: base, payMethod: 'counter',
         status: 'upcoming', createdAt, voucherUsed: false,
       }
     })
-
-    const batch = writeBatch(db)
     newBookings.forEach((b) => batch.set(doc(db, 'bookings', b.id), stripId(b)))
-    if (member) {
-      let stamps = (member.stamps || 0) + newBookings.length
-      let earned = 0
-      while (stamps >= 10) { stamps -= 10; earned += 1 }
-      batch.update(doc(db, 'members', userId), {
-        stamps, bookingsYear: (member.bookingsYear || 0) + newBookings.length,
+
+    // one stamp per booking (+ earned free-vouchers)
+    let stamps = (existing?.stamps || 0) + newBookings.length
+    let earned = 0
+    while (stamps >= 10) { stamps -= 10; earned += 1 }
+    const bookingsYear = (existing?.bookingsYear || 0) + newBookings.length
+
+    if (guest && !userId) {
+      // create the walk-in member with its final stamp totals (single write)
+      batch.set(doc(db, 'members', uid), {
+        name: guest.name.trim(), email: '', phone: (guest.phone || '').trim(),
+        channel: 'guest', country: '—', lang, avatar: '🎾',
+        stamps, bookingsYear, credits: 0, suspended: false,
+        joined: todayISO(), birthday: null,
       })
-      newBookings.forEach((b) => batch.set(doc(db, 'stampLog', nid('s')), {
-        userId, date: todayISO(), delta: 1, note: `Admin booking ${b.ref} (phone/walk-in)`, by: 'admin',
-      }))
-      for (let k = 0; k < earned; k += 1) {
-        batch.set(doc(db, 'vouchers', nid('v')), {
-          userId, issued: todayISO(), expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'stamps',
-        })
-      }
+    } else if (existing) {
+      batch.update(doc(db, 'members', uid), { stamps, bookingsYear })
     }
+
+    newBookings.forEach((b) => batch.set(doc(db, 'stampLog', nid('s')), {
+      userId: uid, date: todayISO(), delta: 1, note: `Admin booking ${b.ref} (phone/walk-in)`, by: 'admin',
+    }))
+    for (let k = 0; k < earned; k += 1) {
+      batch.set(doc(db, 'vouchers', nid('v')), {
+        userId: uid, issued: todayISO(), expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'stamps',
+      })
+    }
+
     await batch.commit()
-    await logAdmin(`Booked ${newBookings.length} slot(s) for ${member?.name ?? userId} — ${lang === 'th' ? 'จองให้ลูกค้า (โทร/walk-in)' : 'manual booking (phone/walk-in)'}`)
+    const who = existing?.name ?? guest?.name ?? uid
+    await logAdmin(`Booked ${newBookings.length} slot(s) for ${who}${guest && !userId ? ' (guest)' : ''} — ${lang === 'th' ? 'จองให้ลูกค้า (โทร/walk-in)' : 'manual booking (phone/walk-in)'}`)
     return newBookings
   }, [courts, members, settings.voucherDays, logAdmin, lang])
 

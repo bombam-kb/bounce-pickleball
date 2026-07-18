@@ -17,6 +17,8 @@ function BookForCustomerModal({ onClose }) {
   const th = lang === 'th'
   const [q, setQ] = useState('')
   const [customer, setCustomer] = useState(null)
+  const [guestMode, setGuestMode] = useState(false)
+  const [guest, setGuest] = useState({ name: '', phone: '' })
   const [courtId, setCourtId] = useState(courts.find((c) => c.active)?.id ?? '')
   const [date, setDate] = useState(todayISO())
   const [duration, setDuration] = useState(settings.slotDuration)
@@ -44,7 +46,11 @@ function BookForCustomerModal({ onClose }) {
   const confirmBooking = async () => {
     setBusy(true)
     try {
-      const bookings = await adminCreateMultiBooking({ userId: customer.id, items: picks, duration })
+      const bookings = await adminCreateMultiBooking({
+        userId: guestMode ? null : customer.id,
+        guest: guestMode ? guest : null,
+        items: picks, duration,
+      })
       setSuccess(bookings)
     } catch (e) {
       console.error('[Bounce] admin booking failed', e)
@@ -62,7 +68,7 @@ function BookForCustomerModal({ onClose }) {
           <h3 className="mt-3" style={{ fontSize: 17 }}>{t('bookForSuccess', lang)}</h3>
           <p className="muted mt-1">{success.length} {th ? 'รายการ' : 'booking(s)'}</p>
           <div className="card-flat pad-4 mt-3" style={{ textAlign: 'left' }}>
-            <div className="row between"><span className="muted tiny">{t('customer', lang)}</span><b>{customer.avatar} {customer.name}</b></div>
+            <div className="row between"><span className="muted tiny">{t('customer', lang)}</span><b>{guestMode ? `🎾 ${guest.name} (Guest)` : `${customer.avatar} ${customer.name}`}</b></div>
             {success.map((b) => {
               const c = courts.find((x) => x.id === b.courtId)
               return (
@@ -88,9 +94,25 @@ function BookForCustomerModal({ onClose }) {
         <h3 style={{ fontSize: 17 }}>{t('bookForTitle', lang)}</h3>
       </div>
 
-      {/* step 1: customer */}
+      {/* step 1: customer — existing member or a walk-in guest */}
       <label className="label">{t('selectCustomer', lang)}</label>
-      {customer ? (
+      <div className="row gap-2" style={{ marginBottom: 8 }}>
+        <button className={`btn btn-sm ${!guestMode ? 'btn-pine' : ''}`}
+          onClick={() => setGuestMode(false)}>{th ? 'สมาชิก' : 'Member'}</button>
+        <button className={`btn btn-sm ${guestMode ? 'btn-pine' : ''}`}
+          onClick={() => { setGuestMode(true); setCustomer(null); setQ('') }}>
+          {th ? 'Guest (ไม่ต้องสมัคร)' : 'Guest (no account)'}
+        </button>
+      </div>
+
+      {guestMode ? (
+        <div className="col gap-2">
+          <input className="input" maxLength={60} placeholder={th ? 'ชื่อลูกค้า (จำเป็น)' : 'Guest name (required)'}
+            value={guest.name} onChange={(e) => setGuest((g) => ({ ...g, name: e.target.value }))} />
+          <input className="input" maxLength={20} placeholder={th ? 'เบอร์โทร (ไม่บังคับ)' : 'Phone (optional)'}
+            value={guest.phone} onChange={(e) => setGuest((g) => ({ ...g, phone: e.target.value }))} />
+        </div>
+      ) : customer ? (
         <div className="card-flat pad-3 row between">
           <span>{customer.avatar} <b>{customer.name}</b> <span className="tiny muted">· {customer.email}</span></span>
           <button className="btn btn-sm btn-ghost" onClick={() => { setCustomer(null); setQ('') }}>{t('changeCustomer', lang)}</button>
@@ -188,7 +210,8 @@ function BookForCustomerModal({ onClose }) {
 
       <div className="modal-foot">
         <button className="btn" onClick={onClose}>{t('cancel', lang)}</button>
-        <button className="btn btn-lime" disabled={!customer || picks.length === 0 || busy} onClick={confirmBooking}>
+        <button className="btn btn-lime" onClick={confirmBooking}
+          disabled={busy || picks.length === 0 || (guestMode ? !guest.name.trim() : !customer)}>
           <Icon name="check" size={16} /> {busy ? '…' : `${t('confirmBooking', lang)}${picks.length > 1 ? ` (${picks.length})` : ''}`}
         </button>
       </div>
