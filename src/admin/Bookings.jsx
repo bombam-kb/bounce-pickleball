@@ -13,7 +13,7 @@ const fmtCreated = (iso, lang) => {
 
 // ── "จองให้ลูกค้า" — admin books one or more slots for a phone/walk-in customer ──
 function BookForCustomerModal({ onClose }) {
-  const { lang, members, courts, settings, slotStatus, adminCreateMultiBooking } = useStore()
+  const { lang, members, courts, slotStatus, adminCreateMultiBooking } = useStore()
   const th = lang === 'th'
   const [q, setQ] = useState('')
   const [customer, setCustomer] = useState(null)
@@ -21,7 +21,6 @@ function BookForCustomerModal({ onClose }) {
   const [guest, setGuest] = useState({ name: '', phone: '' })
   const [courtId, setCourtId] = useState(courts.find((c) => c.active)?.id ?? '')
   const [date, setDate] = useState(todayISO())
-  const [duration, setDuration] = useState(settings.slotDuration)
   const [picks, setPicks] = useState([])   // [{courtId, date, hour}] — may span courts/dates
   const [success, setSuccess] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -34,7 +33,7 @@ function BookForCustomerModal({ onClose }) {
 
   const priceOf = (p) => {
     const c = courts.find((x) => x.id === p.courtId)
-    return (isPeak(p.date, p.hour) ? c.pricePeak : c.priceOff) * (duration / 60)
+    return isPeak(p.date, p.hour) ? c.pricePeak : c.priceOff
   }
   const total = picks.reduce((s, p) => s + priceOf(p), 0)
   const isPicked = (h) => picks.some((p) => p.courtId === courtId && p.date === date && p.hour === h)
@@ -49,7 +48,7 @@ function BookForCustomerModal({ onClose }) {
       const bookings = await adminCreateMultiBooking({
         userId: guestMode ? null : customer.id,
         guest: guestMode ? guest : null,
-        items: picks, duration,
+        items: picks,
       })
       setSuccess(bookings)
     } catch (e) {
@@ -174,18 +173,6 @@ function BookForCustomerModal({ onClose }) {
           })}
         </div>
       )}
-
-      {/* duration (applies to all selected slots) */}
-      <div className="row between mt-4" style={{ alignItems: 'center' }}>
-        <span className="label" style={{ margin: 0 }}>{t('duration', lang)}</span>
-        <div className="row gap-2">
-          {[60, 90].map((d) => (
-            <button key={d} className={`btn btn-sm ${duration === d ? 'btn-pine' : ''}`} onClick={() => setDuration(d)}>
-              {d} {t('min', lang)}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* selected slots summary */}
       {picks.length > 0 && (
