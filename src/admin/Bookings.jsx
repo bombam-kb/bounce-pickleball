@@ -66,14 +66,15 @@ function BookForCustomerModal({ onClose }) {
         <div className="tc" style={{ paddingTop: 8 }}>
           <div className="success-ball" style={{ width: 60, height: 60, fontSize: 28 }}>🏓</div>
           <h3 className="mt-3" style={{ fontSize: 17 }}>{t('bookForSuccess', lang)}</h3>
-          <p className="muted mt-1">{success.length} {th ? 'รายการ' : 'booking(s)'}</p>
+          <div className="num mt-1" style={{ fontSize: 20 }}>{success[0].ref}</div>
+          <p className="muted mt-1">{success.length} {th ? 'ช่องเวลา' : 'slot(s)'}</p>
           <div className="card-flat pad-4 mt-3" style={{ textAlign: 'left' }}>
             <div className="row between"><span className="muted tiny">{t('customer', lang)}</span><b>{guestMode ? `🎾 ${guest.name} (Guest)` : `${customer.avatar} ${customer.name}`}</b></div>
             {success.map((b) => {
               const c = courts.find((x) => x.id === b.courtId)
               return (
                 <div key={b.id} className="row between mt-2">
-                  <span className="tiny">{lang === 'th' ? c.nameTh : c.name} · {fmtDate(b.date, lang)} · {hourLabel(b.hour)} <span className="num muted">{b.ref}</span></span>
+                  <span className="tiny">{lang === 'th' ? c.nameTh : c.name} · {fmtDate(b.date, lang)} · {hourLabel(b.hour)}</span>
                   <b className="num">฿{b.total}</b>
                 </div>
               )

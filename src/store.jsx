@@ -337,6 +337,7 @@ export function StoreProvider({ children }) {
     else if (promo) totalDiscount = promo.type === 'fixed' ? Math.min(promo.value, subtotal) : Math.round(subtotal * promo.value / 100)
 
     const createdAt = nowLocalISO()
+    const ref = genRef()          // one reference for the whole booking session
     let allocated = 0
     const newBookings = priced.map((it, i) => {
       const disc = i === priced.length - 1
@@ -345,7 +346,7 @@ export function StoreProvider({ children }) {
       if (i < priced.length - 1) allocated += disc
       const total = it.base - disc
       return {
-        id: nid('b'), ref: genRef(), userId: user.id, courtId: it.courtId, date: it.date, hour: it.hour, duration: 60,
+        id: nid('b'), ref, userId: user.id, courtId: it.courtId, date: it.date, hour: it.hour, duration: 60,
         price: it.base, discount: disc, total, payMethod: voucherId ? 'voucher' : payMethod,
         status: 'upcoming', createdAt, voucherUsed: !!voucherId && i === 0,
       }
@@ -469,11 +470,12 @@ export function StoreProvider({ children }) {
 
     const batch = writeBatch(db)
     const createdAt = nowLocalISO()
+    const ref = genRef()          // one reference for the whole booking session
     const newBookings = items.map((it) => {
       const court = courts.find((c) => c.id === it.courtId)
       const base = (isPeak(it.date, it.hour) ? court.pricePeak : court.priceOff) * (duration / 60)
       return {
-        id: nid('b'), ref: genRef(), userId: uid, courtId: it.courtId, date: it.date, hour: it.hour, duration,
+        id: nid('b'), ref, userId: uid, courtId: it.courtId, date: it.date, hour: it.hour, duration,
         price: base, discount: 0, total: base, payMethod: 'counter',
         status: 'upcoming', createdAt, voucherUsed: false,
       }

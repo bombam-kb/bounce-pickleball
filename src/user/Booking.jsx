@@ -69,13 +69,10 @@ export default function Booking({ cart, onDone, onBack }) {
       <div className="page tc" style={{ paddingTop: 48 }}>
         <div className="success-ball">🏓</div>
         <h2 className="mt-4" style={{ fontSize: 24 }}>{t('bookingSuccess', lang)}</h2>
-        {result.bookings.length === 1 ? (
-          <>
-            <p className="muted mt-2">{t('bookingRef', lang)}</p>
-            <div className="num" style={{ fontSize: 26, letterSpacing: 1 }}>{result.bookings[0].ref}</div>
-          </>
-        ) : (
-          <p className="muted mt-2">{result.bookings.length} {lang === 'th' ? 'รายการ' : 'bookings'}</p>
+        <p className="muted mt-2">{t('bookingRef', lang)}</p>
+        <div className="num" style={{ fontSize: 26, letterSpacing: 1 }}>{result.bookings[0].ref}</div>
+        {result.bookings.length > 1 && (
+          <p className="muted mt-1">{result.bookings.length} {lang === 'th' ? 'ช่องเวลา' : 'slots'}</p>
         )}
         <div className="card pad-4 mt-4" style={{ textAlign: 'left' }}>
           {result.bookings.map((b, i) => {
@@ -84,7 +81,7 @@ export default function Booking({ cart, onDone, onBack }) {
               <div key={b.id} className="row between" style={{ padding: '8px 0', borderBottom: i < result.bookings.length - 1 ? '1px dashed #E3E1D5' : 'none' }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 13.5 }}>{lang === 'th' ? c.nameTh : c.name}</div>
-                  <div className="tiny">{fmtDate(b.date, lang)} · {hourLabel(b.hour)} {result.bookings.length > 1 && <span className="num">· {b.ref}</span>}</div>
+                  <div className="tiny">{fmtDate(b.date, lang)} · {hourLabel(b.hour)}</div>
                 </div>
                 <div className="row gap-2" style={{ alignItems: 'center' }}>
                   <b className="num">{b.total === 0 ? t('free', lang) : `฿${b.total}`}</b>
