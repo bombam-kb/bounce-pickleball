@@ -43,11 +43,17 @@ export default function Booking({ cart, onDone, onBack }) {
     if (total > 0 && payMethod === 'promptpay') { setStep('qr'); return }
     finish()
   }
-  const finish = () => {
-    const r = createMultiBooking(items.map((it) => ({ courtId: it.courtId, date, hour: it.hour })),
-      { promo: voucherId ? null : promo, voucherId, payMethod })
-    setResult(r)
-    setStep('success')
+  const finish = async () => {
+    try {
+      const r = await createMultiBooking(items.map((it) => ({ courtId: it.courtId, date, hour: it.hour })),
+        { promo: voucherId ? null : promo, voucherId, payMethod })
+      setResult(r)
+      setStep('success')
+    } catch (e) {
+      console.error('[Bounce] booking failed', e)
+      alert(lang === 'th' ? 'จองไม่สำเร็จ ลองใหม่อีกครั้ง' : 'Booking failed — please try again')
+      setStep('summary')
+    }
   }
 
   // QR: auto-confirm after 3s to simulate bank callback

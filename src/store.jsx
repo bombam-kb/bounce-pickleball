@@ -335,17 +335,18 @@ export function StoreProvider({ children }) {
     if (voucherId) batch.update(doc(db, 'vouchers', voucherId), { used: true })
     if (promo) batch.update(doc(db, 'promos', promo.id), { used: promo.used + 1 })
 
-    // one stamp per booking not covered by a voucher redemption
+    // one stamp per booking not covered by a voucher redemption.
+    // use the live `user` (always present when booking) as the stamp source so
+    // this never silently skips if the members snapshot hasn't populated yet.
     const stampBookings = newBookings.filter((b) => !b.voucherUsed)
     let voucherEarned = false
-    const member = members.find((m) => m.id === user.id)
-    if (member && stampBookings.length) {
-      let stamps = member.stamps + stampBookings.length
+    if (stampBookings.length) {
+      let stamps = (user.stamps || 0) + stampBookings.length
       let earned = 0
       while (stamps >= 10) { stamps -= 10; earned += 1 }
       voucherEarned = earned > 0
       batch.update(doc(db, 'members', user.id), {
-        stamps, bookingsYear: member.bookingsYear + stampBookings.length,
+        stamps, bookingsYear: (user.bookingsYear || 0) + stampBookings.length,
       })
       stampBookings.forEach((b) => batch.set(doc(db, 'stampLog', nid('s')), {
         userId: user.id, date: todayISO(), delta: 1, note: `Booking ${b.ref}`, by: 'system',
@@ -369,7 +370,7 @@ export function StoreProvider({ children }) {
         lang === 'th' ? 'สะสมแสตมป์ครบ 10 ดวงแล้ว' : 'You collected 10 stamps')
     }
     return { bookings: newBookings, voucherEarned }
-  }, [courts, user, members, notify, lang, settings.voucherDays])
+  }, [courts, user, notify, lang, settings.voucherDays])
 
   const cancelBooking = useCallback(async (bookingId, by = 'user') => {
     const bk = bookings.find((b) => b.id === bookingId)

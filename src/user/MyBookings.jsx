@@ -5,7 +5,7 @@ import { todayISO } from '../data/index.js'
 import { StatusChip, hourLabel, Icon, usePager, Pager, printSlip } from '../components/ui.jsx'
 
 export default function MyBookings() {
-  const { lang, user, bookings, courts, settings, cancelBooking } = useStore()
+  const { lang, user, bookings, courts } = useStore()
   const [tab, setTab] = useState('upcoming')
 
   const mine = bookings
@@ -19,11 +19,6 @@ export default function MyBookings() {
     .sort((a, b) => (tab === 'upcoming' ? 1 : -1) * ((a.date + a.hour) < (b.date + b.hour) ? -1 : 1))
 
   const pager = usePager(mine, 5)
-
-  const canCancel = (b) => {
-    const start = new Date(b.date + 'T00:00:00'); start.setHours(b.hour)
-    return (start - new Date()) / 36e5 >= settings.cancelHours
-  }
 
   return (
     <div className="page">
@@ -63,18 +58,8 @@ export default function MyBookings() {
                         <Icon name="download" size={14} /> {t('downloadSlip', lang)}
                       </button>
                     )}
-                    {b.status === 'upcoming' && (
-                      canCancel(b)
-                        ? <button className="btn btn-sm btn-danger" onClick={() => confirm(t('cancelBooking', lang) + '?') && cancelBooking(b.id)}>{t('cancelBooking', lang)}</button>
-                        : <span className="tiny">{t('cancelTooLate', lang)}</span>
-                    )}
                   </div>
                 </div>
-                {b.status === 'upcoming' && (
-                  <div className="tiny mt-2">
-                    {t('cancelPolicy', lang)} {settings.cancelHours} {t('cancelPolicyEnd', lang)}
-                  </div>
-                )}
               </div>
             </div>
           )
