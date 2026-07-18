@@ -11,13 +11,13 @@ import Login from './Login.jsx'
 export default function UserApp() {
   const { lang, switchLang, user, notifications, markNotifsRead } = useStore()
   const [screen, setScreen] = useState('home')   // home | booking | bookings | membership | login
-  const [sel, setSel] = useState(null)           // selected slot
+  const [cart, setCart] = useState(null)         // { date, items: [{courtId, hour}] }
   const [afterLogin, setAfterLogin] = useState(null)
   const [notifOpen, setNotifOpen] = useState(false)
   const unread = notifications.filter((n) => !n.read).length
 
-  const selectSlot = (s) => {
-    setSel(s)
+  const goCheckout = (c) => {
+    setCart(c)
     if (!user) { setAfterLogin('booking'); setScreen('login') }
     else setScreen('booking')
   }
@@ -63,9 +63,9 @@ export default function UserApp() {
         </div>
       </header>
 
-      {screen === 'home' && <Home onSelectSlot={selectSlot} />}
-      {screen === 'booking' && sel && (
-        <Booking sel={sel} onBack={() => setScreen('home')} onDone={() => { setSel(null); setScreen('bookings') }} />
+      {screen === 'home' && <Home onCheckout={goCheckout} />}
+      {screen === 'booking' && cart && (
+        <Booking cart={cart} onBack={() => setScreen('home')} onDone={() => { setCart(null); setScreen('bookings') }} />
       )}
       {screen === 'bookings' && user && <MyBookings />}
       {screen === 'membership' && user && <Membership />}

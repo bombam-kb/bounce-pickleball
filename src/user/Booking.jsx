@@ -5,10 +5,10 @@ import { isPeak, todayISO } from '../data/index.js'
 import { Icon, Modal, hourLabel, printSlip } from '../components/ui.jsx'
 
 // step: summary → qr (if promptpay) → success
-export default function Booking({ sel, onDone, onBack }) {
-  const { lang, courts, user, vouchers, settings, validatePromo, createBooking } = useStore()
-  const court = courts.find((c) => c.id === sel.courtId)
-  const [duration, setDuration] = useState(settings.slotDuration)
+export default function Booking({ cart, onDone, onBack }) {
+  const { lang, courts, user, vouchers, validatePromo, createMultiBooking } = useStore()
+  const { date, items } = cart
+
   const [promoInput, setPromoInput] = useState('')
   const [promo, setPromo] = useState(null)
   const [promoErr, setPromoErr] = useState(false)
@@ -17,15 +17,20 @@ export default function Booking({ sel, onDone, onBack }) {
   const [step, setStep] = useState('summary')
   const [result, setResult] = useState(null)
 
-  const peak = isPeak(sel.date, sel.hour)
-  const base = (peak ? court.pricePeak : court.priceOff) * (duration / 60)
+  const priced = items.map((it) => {
+    const court = courts.find((c) => c.id === it.courtId)
+    const peak = isPeak(date, it.hour)
+    return { ...it, court, peak, price: peak ? court.pricePeak : court.priceOff }
+  })
+  const subtotal = priced.reduce((s, x) => s + x.price, 0)
+  const singleItem = items.length === 1
   const myVouchers = vouchers.filter((v) => v.userId === user?.id && !v.used && v.expiry >= todayISO())
-  const voucherBlocked = peak // off-peak only per SRS
+  const voucherBlocked = !singleItem || priced[0].peak // off-peak only, and only for a single-item cart
 
   let discount = 0
-  if (voucherId) discount = base
-  else if (promo) discount = promo.type === 'fixed' ? Math.min(promo.value, base) : Math.round(base * promo.value / 100)
-  const total = base - discount
+  if (voucherId) discount = subtotal
+  else if (promo) discount = promo.type === 'fixed' ? Math.min(promo.value, subtotal) : Math.round(subtotal * promo.value / 100)
+  const total = subtotal - discount
 
   const applyPromo = () => {
     const p = validatePromo(promoInput)
@@ -39,7 +44,8 @@ export default function Booking({ sel, onDone, onBack }) {
     finish()
   }
   const finish = () => {
-    const r = createBooking({ courtId: court.id, date: sel.date, hour: sel.hour, duration, promo: voucherId ? null : promo, voucherId, payMethod })
+    const r = createMultiBooking(items.map((it) => ({ courtId: it.courtId, date, hour: it.hour })),
+      { promo: voucherId ? null : promo, voucherId, payMethod })
     setResult(r)
     setStep('success')
   }
@@ -52,27 +58,48 @@ export default function Booking({ sel, onDone, onBack }) {
   }, [step])
 
   if (step === 'success' && result) {
+    const grandTotal = result.bookings.reduce((s, b) => s + b.total, 0)
     return (
       <div className="page tc" style={{ paddingTop: 48 }}>
         <div className="success-ball">🏓</div>
         <h2 className="mt-4" style={{ fontSize: 24 }}>{t('bookingSuccess', lang)}</h2>
-        <p className="muted mt-2">{t('bookingRef', lang)}</p>
-        <div className="num" style={{ fontSize: 26, letterSpacing: 1 }}>{result.booking.ref}</div>
-        <div className="card pad-4 mt-4" style={{ textAlign: 'left' }}>
-          <Row k={t('location', lang)} v={lang === 'th' ? court.nameTh : court.name} />
-          <Row k={t('dateTime', lang)} v={`${fmtDate(sel.date, lang)} · ${hourLabel(sel.hour)}`} />
-          <Row k={t('duration', lang)} v={`${duration} ${t('min', lang)}`} />
-          <Row k={t('amountPayable', lang)} v={total === 0 ? t('free', lang) : `฿${total}`} bold />
-        </div>
-        {!result.booking.voucherUsed && (
-          <div className="chip chip-lime mt-4" style={{ fontSize: 14, padding: '6px 16px' }}>
-            +1 🏓 {t('stampEarned', lang)}{result.voucherEarned ? ' → 🎁 Free Voucher!' : ''}
-          </div>
+        {result.bookings.length === 1 ? (
+          <>
+            <p className="muted mt-2">{t('bookingRef', lang)}</p>
+            <div className="num" style={{ fontSize: 26, letterSpacing: 1 }}>{result.bookings[0].ref}</div>
+          </>
+        ) : (
+          <p className="muted mt-2">{result.bookings.length} {lang === 'th' ? 'รายการ' : 'bookings'}</p>
         )}
-        <button className="btn btn-full mt-6" onClick={() => printSlip(result.booking, court, user, lang)}>
-          <Icon name="download" size={16} /> {t('downloadSlip', lang)}
-        </button>
-        <button className="btn btn-pine btn-full btn-lg mt-3" onClick={onDone}>{t('backHome', lang)}</button>
+        <div className="card pad-4 mt-4" style={{ textAlign: 'left' }}>
+          {result.bookings.map((b, i) => {
+            const c = courts.find((x) => x.id === b.courtId)
+            return (
+              <div key={b.id} className="row between" style={{ padding: '8px 0', borderBottom: i < result.bookings.length - 1 ? '1px dashed #E3E1D5' : 'none' }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{lang === 'th' ? c.nameTh : c.name}</div>
+                  <div className="tiny">{fmtDate(b.date, lang)} · {hourLabel(b.hour)} {result.bookings.length > 1 && <span className="num">· {b.ref}</span>}</div>
+                </div>
+                <div className="row gap-2" style={{ alignItems: 'center' }}>
+                  <b className="num">{b.total === 0 ? t('free', lang) : `฿${b.total}`}</b>
+                  <button className="btn btn-sm btn-ghost" onClick={() => printSlip(b, c, user, lang)} aria-label="download">
+                    <Icon name="download" size={13} />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+          {result.bookings.length > 1 && (
+            <div className="row between mt-2" style={{ paddingTop: 8, borderTop: '2px solid var(--stroke)' }}>
+              <b>{t('amountPayable', lang)}</b>
+              <b className="num">{grandTotal === 0 ? t('free', lang) : `฿${grandTotal}`}</b>
+            </div>
+          )}
+        </div>
+        <div className="chip chip-lime mt-4" style={{ fontSize: 14, padding: '6px 16px' }}>
+          +{result.bookings.filter((b) => !b.voucherUsed).length} 🏓 {t('stampEarned', lang)}{result.voucherEarned ? ' → 🎁 Free Voucher!' : ''}
+        </div>
+        <button className="btn btn-pine btn-full btn-lg mt-6" onClick={onDone}>{t('backHome', lang)}</button>
       </div>
     )
   }
@@ -82,24 +109,16 @@ export default function Booking({ sel, onDone, onBack }) {
       <button className="btn btn-ghost btn-sm" onClick={onBack}><Icon name="chevL" size={16} /> {t('back', lang)}</button>
       <h2 className="mt-3" style={{ fontSize: 21 }}>{t('bookingSummary', lang)}</h2>
 
-      <div className="card mt-3" style={{ overflow: 'hidden' }}>
-        <div className="court-photo" style={{ background: court.photo, height: 70 }}>
-          <h3>{lang === 'th' ? court.nameTh : court.name}</h3>
-        </div>
-        <div className="pad-4">
-          <Row k={t('dateTime', lang)} v={`${fmtDate(sel.date, lang)} · ${hourLabel(sel.hour)}`} />
-          <div className="row between mt-2">
-            <span className="muted" style={{ fontSize: 13.5 }}>{t('duration', lang)}</span>
-            <div className="row gap-2">
-              {[60, 90].map((d) => (
-                <button key={d} className={`btn btn-sm ${duration === d ? 'btn-pine' : ''}`} onClick={() => setDuration(d)}>
-                  {d} {t('min', lang)}
-                </button>
-              ))}
+      <div className="card-flat pad-4 mt-3">
+        {priced.map((it, i) => (
+          <div key={`${it.courtId}-${it.hour}`} className="row between" style={{ padding: '7px 0', borderBottom: i < priced.length - 1 ? '1px solid #E3E1D5' : 'none' }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13.5 }}>{lang === 'th' ? it.court.nameTh : it.court.name}</div>
+              <div className="tiny">{fmtDate(date, lang)} · {hourLabel(it.hour)} · {it.peak ? t('peak', lang) : t('offPeak', lang)}</div>
             </div>
+            <b className="num">฿{it.price}</b>
           </div>
-          <Row k={`${t('price', lang)} (${peak ? t('peak', lang) : t('offPeak', lang)})`} v={`฿${base}`} />
-        </div>
+        ))}
       </div>
 
       {/* promo + voucher */}
@@ -117,7 +136,7 @@ export default function Booking({ sel, onDone, onBack }) {
           <div className="mt-3">
             <label className="label">🎁 {t('useVoucher', lang)}</label>
             {voucherBlocked
-              ? <div className="tiny">{t('voucherOffPeakOnly', lang)}</div>
+              ? <div className="tiny">{!singleItem ? t('voucherSingleOnly', lang) : t('voucherOffPeakOnly', lang)}</div>
               : (
                 <button className={`btn btn-sm ${voucherId ? 'btn-pine' : ''}`}
                   onClick={() => { setVoucherId(voucherId ? null : myVouchers[0].id); setPromo(null); setPromoInput('') }}>
@@ -131,12 +150,15 @@ export default function Booking({ sel, onDone, onBack }) {
 
       {/* totals */}
       <div className="card-pine pad-4 mt-3">
+        <div className="row between" style={{ opacity: 0.85, fontSize: 14 }}>
+          <span>{t('itemsSelected', lang, { n: items.length })}</span><span>฿{subtotal}</span>
+        </div>
         {discount > 0 && (
           <div className="row between" style={{ opacity: 0.85, fontSize: 14 }}>
             <span>{t('discount', lang)}</span><span>−฿{discount}</span>
           </div>
         )}
-        <div className="row between">
+        <div className="row between mt-1">
           <span style={{ fontWeight: 600 }}>{t('amountPayable', lang)}</span>
           <span className="num" style={{ fontSize: 28, color: 'var(--lime)' }}>{total === 0 ? t('free', lang) : `฿${total}`}</span>
         </div>
@@ -171,13 +193,6 @@ export default function Booking({ sel, onDone, onBack }) {
     </div>
   )
 }
-
-const Row = ({ k, v, bold }) => (
-  <div className="row between mt-2" style={{ fontSize: bold ? 15 : 13.5 }}>
-    <span className="muted">{k}</span>
-    <span style={{ fontWeight: bold ? 800 : 600 }}>{v}</span>
-  </div>
-)
 
 const PayOpt = ({ icon, label, on, onClick, disabled }) => (
   <button className="card-flat pad-3 row gap-3" onClick={onClick} disabled={disabled}

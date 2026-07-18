@@ -7,24 +7,19 @@ import { Icon, Modal, Toggle, usePager, Pager } from '../components/ui.jsx'
 const EMPTY = { code: '', type: 'fixed', value: 50, expiry: addDays(todayISO(), 30), limit: 100, used: 0, active: true }
 
 export default function Promos() {
-  const { lang, promos, setPromos, logAdmin } = useStore()
+  const { lang, promos, savePromo, updatePromo, logAdmin } = useStore()
   const [editing, setEditing] = useState(null)
   const pager = usePager(promos, 6)
 
   const save = () => {
     if (!editing.code) return
     const code = editing.code.toUpperCase().replace(/\s/g, '')
-    if (editing.id) {
-      setPromos((ps) => ps.map((p) => (p.id === editing.id ? { ...editing, code } : p)))
-      logAdmin(`Edit promo ${code}`)
-    } else {
-      setPromos((ps) => [{ ...editing, code, id: 'p' + Date.now() }, ...ps])
-      logAdmin(`Create promo ${code}`)
-    }
+    savePromo({ ...editing, code })
+    logAdmin(`${editing.id ? 'Edit' : 'Create'} promo ${code}`)
     setEditing(null)
   }
   const toggle = (p, v) => {
-    setPromos((ps) => ps.map((x) => (x.id === p.id ? { ...x, active: v } : x)))
+    updatePromo(p.id, { active: v })
     logAdmin(`${v ? 'Enable' : 'Disable'} promo ${p.code}`)
   }
   const set = (k, v) => setEditing((e) => ({ ...e, [k]: v }))

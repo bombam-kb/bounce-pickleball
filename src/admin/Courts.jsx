@@ -18,39 +18,34 @@ const EMPTY = {
 }
 
 export default function Courts() {
-  const { lang, courts, setCourts, logAdmin } = useStore()
+  const { lang, courts, saveCourt: persistCourt, deleteCourt, updateCourt, bookings, logAdmin } = useStore()
   const [editing, setEditing] = useState(null)   // court object or EMPTY clone
   const [blocking, setBlocking] = useState(null) // court being blocked
   const [blockForm, setBlockForm] = useState({ date: todayISO(), hour: 12, reason: '' })
 
   const saveCourt = () => {
     if (!editing.name) return
-    if (editing.id) {
-      setCourts((cs) => cs.map((c) => (c.id === editing.id ? editing : c)))
-      logAdmin(`Edit court ${editing.name}`)
-    } else {
-      const id = 'c' + Date.now()
-      setCourts((cs) => [...cs, { ...editing, id, nameTh: editing.nameTh || editing.name, descTh: editing.descTh || editing.desc }])
-      logAdmin(`Add court ${editing.name}`)
-    }
+    persistCourt(editing)
+    logAdmin(`${editing.id ? 'Edit' : 'Add'} court ${editing.name}`)
     setEditing(null)
   }
   const removeCourt = (c) => {
+    const upcoming = bookings.filter((b) => b.courtId === c.id && b.status === 'upcoming').length
+    if (upcoming > 0) { alert(t('courtHasBookings', lang, { n: upcoming })); return }
     if (!confirm(`${t('delete', lang)} ${c.name}?`)) return
-    setCourts((cs) => cs.filter((x) => x.id !== c.id))
+    deleteCourt(c.id)
     logAdmin(`Delete court ${c.name}`)
   }
   const saveBlock = () => {
-    setCourts((cs) => cs.map((c) => (c.id === blocking.id
-      ? { ...c, blocked: [...c.blocked, { ...blockForm, hour: +blockForm.hour }] }
-      : c)))
+    const c = courts.find((x) => x.id === blocking.id)
+    updateCourt(blocking.id, { blocked: [...(c?.blocked ?? []), { ...blockForm, hour: +blockForm.hour }] })
     logAdmin(`Block ${blocking.name} ${blockForm.date} ${hourLabel(+blockForm.hour)} — ${blockForm.reason}`)
     setBlocking(null)
   }
   const unblock = (courtId, i) => {
-    setCourts((cs) => cs.map((c) => (c.id === courtId
-      ? { ...c, blocked: c.blocked.filter((_, j) => j !== i) }
-      : c)))
+    const c = courts.find((x) => x.id === courtId)
+    if (!c) return
+    updateCourt(courtId, { blocked: c.blocked.filter((_, j) => j !== i) })
   }
   const set = (k, v) => setEditing((e) => ({ ...e, [k]: v }))
 

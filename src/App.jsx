@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { StoreProvider } from './store.jsx'
+import { firebaseReady } from './firebase.js'
 
 // code-split: customers never download the admin bundle (and vice versa)
 const UserApp = lazy(() => import('./user/UserApp.jsx'))
@@ -28,6 +29,15 @@ export default function App() {
 
   return (
     <StoreProvider>
+      {!firebaseReady && (
+        <div style={{
+          background: '#7A1F1F', color: '#fff', padding: '10px 14px', fontSize: 13,
+          fontFamily: 'var(--font-body)', textAlign: 'center', lineHeight: 1.4,
+        }}>
+          ⚠ Firebase is not configured — copy <code>.env.example</code> to <code>.env</code>,
+          fill in your keys, and restart. See <b>FIREBASE_SETUP.md</b>.
+        </div>
+      )}
       <Suspense fallback={<Loading />}>
         {side === 'admin' ? <AdminApp goUser={() => go('user')} /> : <UserApp />}
       </Suspense>

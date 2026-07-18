@@ -1,5 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import {
+  createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
+  sendEmailVerification, sendPasswordResetEmail, onAuthStateChanged, updateProfile,
+} from 'firebase/auth'
+import {
+  collection, doc, getDoc, getDocs, onSnapshot,
+  setDoc, updateDoc, deleteDoc, writeBatch,
+} from 'firebase/firestore'
+import { auth, db, firebaseReady } from './firebase.js'
+import {
   COURTS, MEMBERS, SEED_BOOKINGS, SEED_PROMOS, SEED_VOUCHERS,
   SEED_STAMP_LOG, SEED_SETTINGS, genRef, todayISO, addDays, isPeak, nowLocalISO, tierOf,
 } from './data/index.js'
@@ -7,74 +16,152 @@ import {
 const Ctx = createContext(null)
 export const useStore = () => useContext(Ctx)
 
-// collision-safe ids (persisted data survives reloads, so a counter won't do)
+// collision-safe ids for docs we create client-side (bookings, vouchers, …)
 const nid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+// Firestore keeps the id as the doc key, so never store it in the doc body too
+const stripId = ({ id, ...rest }) => rest
 
-// demo password hashing — real system must hash server-side (bcrypt/argon2)
-const sha256 = async (text) => {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('bounce·' + text))
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-const genOTP = () => String(Math.floor(100000 + Math.random() * 900000))
-
-// ── localStorage persistence (DEMO ONLY — no server, do not store real data) ──
-const LS_KEY = 'bounce_demo_v1'
-const loadSaved = () => {
-  try {
-    const raw = localStorage.getItem(LS_KEY)
-    if (!raw) return null
-    const d = JSON.parse(raw)
-    // shape check: reject anything that doesn't look like our snapshot
-    if (!d || typeof d !== 'object' ||
-      !Array.isArray(d.courts) || !Array.isArray(d.bookings) ||
-      !Array.isArray(d.members) || typeof d.settings !== 'object') return null
-    return d
-  } catch {
-    return null
+// map Firebase Auth error codes → the ERR keys the Login UI knows about
+const mapAuthError = (e) => {
+  switch (e?.code) {
+    case 'auth/email-already-in-use': return 'exists'
+    case 'auth/invalid-email': return 'bademail'
+    case 'auth/weak-password': return 'shortpass'
+    case 'auth/missing-password':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential': return 'badpass'
+    case 'auth/user-not-found': return 'notfound'
+    case 'auth/too-many-requests': return 'toomany'
+    case 'auth/network-request-failed': return 'network'
+    default: return 'unknown'
   }
 }
-const saved = loadSaved()
+
+// ── one-time seed: if the database is empty, push the demo dataset ──────────
+const SEED_COLLECTIONS = {
+  courts: COURTS, members: MEMBERS, bookings: SEED_BOOKINGS,
+  promos: SEED_PROMOS, vouchers: SEED_VOUCHERS, stampLog: SEED_STAMP_LOG,
+}
+async function seedIfEmpty() {
+  const snap = await getDocs(collection(db, 'courts'))
+  if (!snap.empty) return
+  const batch = writeBatch(db)
+  for (const [col, rows] of Object.entries(SEED_COLLECTIONS)) {
+    rows.forEach((row) => batch.set(doc(db, col, row.id), stripId(row)))
+  }
+  batch.set(doc(db, 'config', 'settings'), SEED_SETTINGS)
+  await batch.commit()
+}
 
 export function StoreProvider({ children }) {
   const [lang, setLang] = useState(() => localStorage.getItem('bounce_lang') || 'th')
-  const [courts, setCourts] = useState(saved?.courts ?? COURTS)
-  const [members, setMembers] = useState(saved?.members ?? MEMBERS)
-  const [bookings, setBookings] = useState(saved?.bookings ?? SEED_BOOKINGS)
-  const [promos, setPromos] = useState(saved?.promos ?? SEED_PROMOS)
-  const [vouchers, setVouchers] = useState(saved?.vouchers ?? SEED_VOUCHERS)
-  const [stampLog, setStampLog] = useState(saved?.stampLog ?? SEED_STAMP_LOG)
-  const [settings, setSettings] = useState(saved?.settings ?? SEED_SETTINGS)
-  const [adminLog, setAdminLog] = useState(saved?.adminLog ?? [])
-  const [user, setUser] = useState(saved?.user ?? null)   // logged-in member (mock)
-  const [adminAuthed, setAdminAuthed] = useState(saved?.adminAuthed ?? false)
-  const [emailUsers, setEmailUsers] = useState(saved?.emailUsers ?? []) // email/password registry (demo)
-  const [notifications, setNotifications] = useState(saved?.notifications ?? [])
 
-  // autosave snapshot on every change
+  // ── live data mirrored from Firestore (source of truth = Firestore) ──
+  const [courts, setCourts] = useState([])
+  const [members, setMembers] = useState([])
+  const [bookings, setBookings] = useState([])
+  const [promos, setPromos] = useState([])
+  const [vouchers, setVouchers] = useState([])
+  const [stampLog, setStampLog] = useState([])
+  const [settings, setSettingsState] = useState(SEED_SETTINGS)
+  const [adminLog, setAdminLog] = useState([])
+
+  // ── session / device state (not business data → kept local) ──
+  const [user, setUser] = useState(null)          // logged-in member
+  const [authReady, setAuthReady] = useState(false)
+  const [adminAuthed, setAdminAuthedState] = useState(() => localStorage.getItem('bounce_admin') === '1')
+  const [notifications, setNotifications] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bounce_notifs') || '[]') } catch { return [] }
+  })
+
+  // subscribe to all collections in real time (+ seed on first run)
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify({
-        courts, members, bookings, promos, vouchers, stampLog, settings, adminLog, user, adminAuthed,
-        emailUsers, notifications,
+    if (!firebaseReady) { setAuthReady(true); return }
+    const unsubs = []
+    let cancelled = false
+    ;(async () => {
+      try { await seedIfEmpty() } catch (e) { console.error('[Bounce] seed failed', e) }
+      if (cancelled) return
+      const sub = (col, setter, sort) =>
+        onSnapshot(collection(db, col), (snap) => {
+          let rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+          if (sort) rows = rows.sort(sort)
+          setter(rows)
+        }, (err) => console.error(`[Bounce] ${col} listener`, err))
+      const byDateDesc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)
+      unsubs.push(sub('courts', setCourts, (a, b) => (a.id < b.id ? -1 : 1)))
+      unsubs.push(sub('members', setMembers))
+      unsubs.push(sub('bookings', setBookings))
+      unsubs.push(sub('promos', setPromos))
+      unsubs.push(sub('vouchers', setVouchers, byDateDesc))
+      unsubs.push(sub('stampLog', setStampLog, byDateDesc))
+      unsubs.push(sub('adminLog', setAdminLog))
+      unsubs.push(onSnapshot(doc(db, 'config', 'settings'), (d) => {
+        if (d.exists()) setSettingsState(d.data())
       }))
-    } catch { /* quota exceeded / private mode — demo keeps running in-memory */ }
-  }, [courts, members, bookings, promos, vouchers, stampLog, settings, adminLog, user, adminAuthed, emailUsers, notifications])
-
-  const resetDemo = useCallback(() => {
-    localStorage.removeItem(LS_KEY)
-    window.location.reload()
+    })()
+    return () => { cancelled = true; unsubs.forEach((u) => u && u()) }
   }, [])
+
+  // auth session → resolve the matching member doc into `user`
+  useEffect(() => {
+    if (!firebaseReady) return
+    const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser && fbUser.emailVerified) {
+        try {
+          const snap = await getDoc(doc(db, 'members', fbUser.uid))
+          if (snap.exists()) setUser({ id: snap.id, ...snap.data() })
+        } catch (e) { console.error('[Bounce] load member', e) }
+      } else {
+        // signed out / unverified — keep an active LINE demo session if any
+        setUser((u) => (u && u.channel === 'line' ? u : null))
+      }
+      setAuthReady(true)
+    })
+    return unsub
+  }, [])
+
+  // keep the logged-in user's stamps/credits/etc. live as members updates
+  useEffect(() => {
+    if (!user) return
+    const fresh = members.find((m) => m.id === user.id)
+    if (fresh) setUser((u) => ({ ...u, ...fresh }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members])
+
+  // persist device-local bits
+  useEffect(() => {
+    try { localStorage.setItem('bounce_notifs', JSON.stringify(notifications.slice(0, 50))) } catch { /* quota */ }
+  }, [notifications])
 
   const switchLang = useCallback((l) => {
     setLang(l)
     localStorage.setItem('bounce_lang', l)
   }, [])
 
+  const setAdminAuthed = useCallback((v) => {
+    setAdminAuthedState(v)
+    localStorage.setItem('bounce_admin', v ? '1' : '0')
+  }, [])
+
+  // clears device-local state only — does not wipe the shared Firestore data
+  const resetDemo = useCallback(async () => {
+    try { if (firebaseReady && auth.currentUser) await signOut(auth) } catch { /* ignore */ }
+    localStorage.removeItem('bounce_notifs')
+    localStorage.removeItem('bounce_admin')
+    window.location.reload()
+  }, [])
+
+  // ── LINE login: demo shortcut (Firebase has no native LINE provider) ──
   const login = useCallback((channel) => {
-    // Mock social login → sign in as the demo member, tag the channel
-    setUser({ ...(members.find((m) => m.id === 'u1') ?? MEMBERS[0]), channel })
+    const base = members.find((m) => m.id === 'u1') ?? MEMBERS[0]
+    setUser({ ...base, channel })
   }, [members])
-  const logout = useCallback(() => setUser(null), [])
+
+  const logout = useCallback(async () => {
+    try { if (firebaseReady && auth.currentUser) await signOut(auth) } catch { /* ignore */ }
+    setUser(null)
+  }, [])
 
   // ── notifications (in-app + browser Notification API when granted) ──
   const notify = useCallback((title, body) => {
@@ -88,67 +175,68 @@ export function StoreProvider({ children }) {
   const markNotifsRead = useCallback(() =>
     setNotifications((ns) => ns.map((n) => (n.read ? n : { ...n, read: true }))), [])
 
-  // ── email auth (demo: OTP is returned to be shown on screen instead of a real email) ──
+  // ── email auth via Firebase Auth (verification is a link Firebase emails) ──
   const registerEmail = useCallback(async (name, email, password) => {
+    if (!firebaseReady) return { error: 'notconfigured' }
     const em = email.trim().toLowerCase()
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return { error: 'bademail' }
     if (password.length < 8) return { error: 'shortpass' }
-    if (emailUsers.some((u) => u.email === em && u.verified)) return { error: 'exists' }
-    if (members.some((m) => m.email.toLowerCase() === em)) return { error: 'exists' }
-    const otp = genOTP()
-    const passHash = await sha256(password)
-    setEmailUsers((us) => [...us.filter((u) => u.email !== em),
-      { email: em, name: name.trim(), passHash, verified: false, otp, memberId: null }])
-    return { otp } // demo only — real system emails this
-  }, [emailUsers, members])
-
-  const verifyEmail = useCallback((email, code) => {
-    const em = email.trim().toLowerCase()
-    const rec = emailUsers.find((u) => u.email === em && !u.verified)
-    if (!rec || rec.otp !== code.trim()) return { error: 'badcode' }
-    const member = {
-      id: nid('u'), name: rec.name, email: em, phone: '', channel: 'email',
-      country: lang === 'th' ? 'TH' : '—', lang, avatar: '🏓',
-      stamps: 0, bookingsYear: 0, credits: 0, suspended: false,
-      joined: todayISO(), birthday: null,
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, em, password)
+      try { await updateProfile(cred.user, { displayName: name.trim() }) } catch { /* non-fatal */ }
+      const member = {
+        name: name.trim(), email: em, phone: '', channel: 'email',
+        country: lang === 'th' ? 'TH' : '—', lang, avatar: '🏓',
+        stamps: 0, bookingsYear: 0, credits: 0, suspended: false,
+        joined: todayISO(), birthday: null,
+      }
+      await setDoc(doc(db, 'members', cred.user.uid), member)
+      await sendEmailVerification(cred.user)
+      await signOut(auth)     // must verify via the emailed link before first login
+      return { ok: true, email: em }
+    } catch (e) {
+      return { error: mapAuthError(e) }
     }
-    setMembers((ms) => [...ms, member])
-    setEmailUsers((us) => us.map((u) => (u.email === em ? { ...u, verified: true, otp: null, memberId: member.id } : u)))
-    setUser(member)
-    notify(lang === 'th' ? '🎉 ยินดีต้อนรับสู่ Bounce!' : '🎉 Welcome to Bounce!',
-      lang === 'th' ? 'สมัครสมาชิกสำเร็จ เริ่มจองสนามได้เลย' : 'Your account is ready — book a court!')
-    return { ok: true }
-  }, [emailUsers, lang, notify])
+  }, [lang])
 
   const loginEmail = useCallback(async (email, password) => {
+    if (!firebaseReady) return { error: 'notconfigured' }
     const em = email.trim().toLowerCase()
-    const rec = emailUsers.find((u) => u.email === em && u.verified)
-    if (!rec) return { error: 'notfound' }
-    if ((await sha256(password)) !== rec.passHash) return { error: 'badpass' }
-    const m = members.find((x) => x.id === rec.memberId)
-    if (!m) return { error: 'notfound' }
-    if (m.suspended) return { error: 'suspended' }
-    setUser(m)
-    return { ok: true }
-  }, [emailUsers, members])
+    try {
+      const cred = await signInWithEmailAndPassword(auth, em, password)
+      if (!cred.user.emailVerified) { await signOut(auth); return { error: 'notverified' } }
+      const snap = await getDoc(doc(db, 'members', cred.user.uid))
+      if (snap.exists() && snap.data().suspended) { await signOut(auth); return { error: 'suspended' } }
+      return { ok: true } // onAuthStateChanged populates `user`
+    } catch (e) {
+      return { error: mapAuthError(e) }
+    }
+  }, [])
 
-  const requestReset = useCallback((email) => {
-    const em = email.trim().toLowerCase()
-    if (!emailUsers.some((u) => u.email === em && u.verified)) return { error: 'notfound' }
-    const otp = genOTP()
-    setEmailUsers((us) => us.map((u) => (u.email === em ? { ...u, otp } : u)))
-    return { otp } // demo only
-  }, [emailUsers])
+  // re-send the verification link (needs the credentials from the register form)
+  const resendVerification = useCallback(async (email, password) => {
+    if (!firebaseReady) return { error: 'notconfigured' }
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password)
+      if (cred.user.emailVerified) { await signOut(auth); return { alreadyVerified: true } }
+      await sendEmailVerification(cred.user)
+      await signOut(auth)
+      return { ok: true }
+    } catch (e) {
+      return { error: mapAuthError(e) }
+    }
+  }, [])
 
-  const confirmReset = useCallback(async (email, code, newPass) => {
-    const em = email.trim().toLowerCase()
-    const rec = emailUsers.find((u) => u.email === em && u.verified)
-    if (!rec || !rec.otp || rec.otp !== code.trim()) return { error: 'badcode' }
-    if (newPass.length < 8) return { error: 'shortpass' }
-    const passHash = await sha256(newPass)
-    setEmailUsers((us) => us.map((u) => (u.email === em ? { ...u, passHash, otp: null } : u)))
-    return { ok: true }
-  }, [emailUsers])
+  // Firebase emails a reset link — no in-app code step anymore
+  const requestReset = useCallback(async (email) => {
+    if (!firebaseReady) return { error: 'notconfigured' }
+    try {
+      await sendPasswordResetEmail(auth, email.trim().toLowerCase())
+      return { ok: true }
+    } catch (e) {
+      return { error: mapAuthError(e) }
+    }
+  }, [])
 
   // slot status for a court/date/hour
   const slotStatus = useCallback((court, date, hour) => {
@@ -164,73 +252,107 @@ export function StoreProvider({ children }) {
     return taken ? 'booked' : 'free'
   }, [bookings])
 
-  const addStamp = useCallback((userId, note, delta = 1, by = 'system') => {
-    setStampLog((l) => [{ id: nid('s'), userId, date: todayISO(), delta, note, by }, ...l])
+  // add/subtract stamps for one member; issues a voucher when 10 are reached.
+  // reads the current member from the live snapshot (single-shot; callers that
+  // add several stamps at once must batch the math themselves — see below).
+  const addStamp = useCallback(async (userId, note, delta = 1, by = 'system') => {
+    if (!firebaseReady) return false
+    const member = members.find((m) => m.id === userId)
+    if (!member) return false
+    const batch = writeBatch(db)
+    batch.set(doc(db, 'stampLog', nid('s')), { userId, date: todayISO(), delta, note, by })
+    let stamps = member.stamps + delta
     let issued = false
-    setMembers((ms) => ms.map((m) => {
-      if (m.id !== userId) return m
-      let stamps = m.stamps + delta
-      if (stamps >= 10) { stamps -= 10; issued = true }
-      if (stamps < 0) stamps = 0
-      return { ...m, stamps, bookingsYear: delta > 0 ? m.bookingsYear + 1 : m.bookingsYear }
-    }))
-    setUser((u) => {
-      if (!u || u.id !== userId) return u
-      let stamps = u.stamps + delta
-      if (stamps >= 10) stamps -= 10
-      if (stamps < 0) stamps = 0
-      return { ...u, stamps, bookingsYear: delta > 0 ? u.bookingsYear + 1 : u.bookingsYear }
+    if (stamps >= 10) { stamps -= 10; issued = true }
+    if (stamps < 0) stamps = 0
+    batch.update(doc(db, 'members', userId), {
+      stamps, bookingsYear: delta > 0 ? member.bookingsYear + 1 : member.bookingsYear,
     })
     if (issued) {
-      setVouchers((v) => [{
-        id: nid('v'), userId, issued: todayISO(),
-        expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'stamps',
-      }, ...v])
+      batch.set(doc(db, 'vouchers', nid('v')), {
+        userId, issued: todayISO(), expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'stamps',
+      })
     }
+    await batch.commit()
     return issued
-  }, [settings.voucherDays])
+  }, [members, settings.voucherDays])
 
-  const createBooking = useCallback(({ courtId, date, hour, duration, promo, voucherId, payMethod }) => {
-    const court = courts.find((c) => c.id === courtId)
-    const base = (isPeak(date, hour) ? court.pricePeak : court.priceOff) * (duration / 60)
-    let discount = 0
-    if (voucherId) discount = base
-    else if (promo) discount = promo.type === 'fixed' ? Math.min(promo.value, base) : Math.round(base * promo.value / 100)
-    const total = base - discount
-    const booking = {
-      id: nid('b'), ref: genRef(), userId: user.id, courtId, date, hour, duration,
-      price: base, discount, total, payMethod: voucherId ? 'voucher' : payMethod,
-      status: 'upcoming', checkedIn: false, createdAt: nowLocalISO(), voucherUsed: !!voucherId,
-    }
-    setBookings((bs) => [booking, ...bs])
-    if (voucherId) {
-      setVouchers((vs) => vs.map((v) => (v.id === voucherId ? { ...v, used: true } : v)))
-    }
-    if (promo) {
-      setPromos((ps) => ps.map((p) => (p.id === promo.id ? { ...p, used: p.used + 1 } : p)))
-    }
-    // stamp: paid bookings only, not voucher redemptions
+  // ── multi-slot checkout — one payment, one booking record per selected cell.
+  // All writes (bookings, voucher/promo usage, stamps, earned vouchers) go in a
+  // single Firestore batch so the stamp math is computed exactly once (no race
+  // between per-booking snapshot reads).
+  const createMultiBooking = useCallback(async (items, { promo, voucherId, payMethod }) => {
+    const priced = items.map((it) => {
+      const court = courts.find((c) => c.id === it.courtId)
+      const base = isPeak(it.date, it.hour) ? court.pricePeak : court.priceOff
+      return { ...it, base }
+    })
+    const subtotal = priced.reduce((s, x) => s + x.base, 0)
+    let totalDiscount = 0
+    if (voucherId && priced.length === 1) totalDiscount = priced[0].base
+    else if (promo) totalDiscount = promo.type === 'fixed' ? Math.min(promo.value, subtotal) : Math.round(subtotal * promo.value / 100)
+
+    const createdAt = nowLocalISO()
+    let allocated = 0
+    const newBookings = priced.map((it, i) => {
+      const disc = i === priced.length - 1
+        ? totalDiscount - allocated
+        : Math.round(totalDiscount * (it.base / subtotal))
+      if (i < priced.length - 1) allocated += disc
+      const total = it.base - disc
+      return {
+        id: nid('b'), ref: genRef(), userId: user.id, courtId: it.courtId, date: it.date, hour: it.hour, duration: 60,
+        price: it.base, discount: disc, total, payMethod: voucherId ? 'voucher' : payMethod,
+        status: 'upcoming', createdAt, voucherUsed: !!voucherId && i === 0,
+      }
+    })
+
+    const batch = writeBatch(db)
+    newBookings.forEach((b) => batch.set(doc(db, 'bookings', b.id), stripId(b)))
+    if (voucherId) batch.update(doc(db, 'vouchers', voucherId), { used: true })
+    if (promo) batch.update(doc(db, 'promos', promo.id), { used: promo.used + 1 })
+
+    // one stamp per booking not covered by a voucher redemption
+    const stampBookings = newBookings.filter((b) => !b.voucherUsed)
     let voucherEarned = false
-    if (!voucherId) voucherEarned = addStamp(user.id, `Booking ${booking.ref}`)
-    notify(
-      lang === 'th' ? `✅ จองสำเร็จ ${booking.ref}` : `✅ Booking confirmed ${booking.ref}`,
-      lang === 'th' ? `${date} เวลา ${String(hour).padStart(2, '0')}:00 · ยอด ฿${total}` : `${date} at ${String(hour).padStart(2, '0')}:00 · ฿${total}`)
-    if (!voucherId) {
-      const ns = (user.stamps + 1) % 10 === 0 ? 10 : (user.stamps + 1) % 10
-      notify(
-        lang === 'th' ? `🏓 คุณสะสมแสตมป์ได้ ${ns}/10 แล้ว!` : `🏓 Stamp collected — ${ns}/10!`,
-        voucherEarned
-          ? (lang === 'th' ? '🎁 ยินดีด้วย! คุณได้รับ Free Booking 1 ครั้ง' : '🎁 Congrats! You earned 1 Free Booking')
-          : (lang === 'th' ? `อีก ${10 - ns} ดวงรับฟรี 1 ครั้ง` : `${10 - ns} more for a free booking`))
+    const member = members.find((m) => m.id === user.id)
+    if (member && stampBookings.length) {
+      let stamps = member.stamps + stampBookings.length
+      let earned = 0
+      while (stamps >= 10) { stamps -= 10; earned += 1 }
+      voucherEarned = earned > 0
+      batch.update(doc(db, 'members', user.id), {
+        stamps, bookingsYear: member.bookingsYear + stampBookings.length,
+      })
+      stampBookings.forEach((b) => batch.set(doc(db, 'stampLog', nid('s')), {
+        userId: user.id, date: todayISO(), delta: 1, note: `Booking ${b.ref}`, by: 'system',
+      }))
+      for (let k = 0; k < earned; k += 1) {
+        batch.set(doc(db, 'vouchers', nid('v')), {
+          userId: user.id, issued: todayISO(), expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'stamps',
+        })
+      }
     }
-    return { booking, voucherEarned }
-  }, [courts, user, addStamp, notify, lang])
+    await batch.commit()
 
-  const cancelBooking = useCallback((bookingId, by = 'user') => {
+    const grandTotal = newBookings.reduce((s, b) => s + b.total, 0)
+    notify(
+      newBookings.length > 1
+        ? (lang === 'th' ? `✅ จองสำเร็จ ${newBookings.length} รายการ` : `✅ ${newBookings.length} bookings confirmed`)
+        : (lang === 'th' ? `✅ จองสำเร็จ ${newBookings[0].ref}` : `✅ Booking confirmed ${newBookings[0].ref}`),
+      lang === 'th' ? `ยอดรวม ฿${grandTotal}` : `Total ฿${grandTotal}`)
+    if (voucherEarned) {
+      notify(lang === 'th' ? '🎁 คุณได้รับ Free Booking 1 ครั้ง!' : '🎁 You earned 1 Free Booking!',
+        lang === 'th' ? 'สะสมแสตมป์ครบ 10 ดวงแล้ว' : 'You collected 10 stamps')
+    }
+    return { bookings: newBookings, voucherEarned }
+  }, [courts, user, members, notify, lang, settings.voucherDays])
+
+  const cancelBooking = useCallback(async (bookingId, by = 'user') => {
     const bk = bookings.find((b) => b.id === bookingId)
     if (!bk) return
-    setBookings((bs) => bs.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' } : b)))
-    if (!bk.voucherUsed) addStamp(bk.userId, `Cancelled ${bk.ref} — stamp refund`, -1, by)
+    await updateDoc(doc(db, 'bookings', bookingId), { status: 'cancelled' })
+    if (!bk.voucherUsed) await addStamp(bk.userId, `Cancelled ${bk.ref} — stamp refund`, -1, by)
     notify(
       lang === 'th' ? `❌ ยกเลิกการจอง ${bk.ref}` : `❌ Booking cancelled ${bk.ref}`,
       bk.voucherUsed
@@ -238,23 +360,24 @@ export function StoreProvider({ children }) {
         : (lang === 'th' ? 'แสตมป์จากการจองนี้ถูกหักคืนแล้ว' : 'The stamp from this booking was refunded'))
   }, [bookings, addStamp, notify, lang])
 
-  // ── Birthday Promo — Gold member ได้ Free Voucher วันเกิด (ปีละครั้ง) ──
+  // ── Birthday Promo — Gold member gets a free voucher on their birthday ──
   useEffect(() => {
-    if (!user?.birthday || user.suspended) return
+    if (!firebaseReady || !user?.birthday || user.suspended) return
     const today = todayISO()
     if (user.birthday.slice(5) !== today.slice(5)) return
     if (tierOf(user.bookingsYear).key !== 'gold') return
     const already = vouchers.some((v) =>
       v.userId === user.id && v.source === 'birthday' && v.issued.slice(0, 4) === today.slice(0, 4))
     if (already) return
-    setVouchers((v) => [{
-      id: nid('v'), userId: user.id, issued: today,
+    setDoc(doc(db, 'vouchers', nid('v')), {
+      userId: user.id, issued: today,
       expiry: addDays(today, settings.voucherDays), used: false, source: 'birthday',
-    }, ...v])
+    }).catch((e) => console.error('[Bounce] birthday voucher', e))
     notify(
       lang === 'th' ? '🎂 สุขสันต์วันเกิด!' : '🎂 Happy Birthday!',
       lang === 'th' ? 'สิทธิ์ Gold Member — รับ Free Booking 1 ครั้งเป็นของขวัญ' : 'Gold perk — enjoy 1 free booking on us')
-  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
 
   const validatePromo = useCallback((code) => {
     const p = promos.find((x) => x.code.toLowerCase() === code.trim().toLowerCase())
@@ -262,63 +385,70 @@ export function StoreProvider({ children }) {
     return p
   }, [promos])
 
-  const logAdmin = useCallback((action) => {
-    setAdminLog((l) => [{ id: nid('a'), date: new Date().toLocaleString(), action }, ...l])
+  const logAdmin = useCallback(async (action) => {
+    if (!firebaseReady) return
+    await setDoc(doc(db, 'adminLog', nid('a')), { date: new Date().toLocaleString(), action })
   }, [])
 
-  // ── court check-in — confirms the customer actually showed up, or marks a no-show ──
-  // Stamps are NOT touched here: per the loyalty rules stamps are earned on successful
-  // payment, not on attendance, so check-in/no-show only changes booking status.
-  const checkInBooking = useCallback((bookingId) => {
-    const bk = bookings.find((b) => b.id === bookingId)
-    if (!bk || bk.status !== 'upcoming') return
-    setBookings((bs) => bs.map((b) => (b.id === bookingId ? { ...b, status: 'completed', checkedIn: true } : b)))
-    logAdmin(`Check-in confirmed — ${bk.ref} (customer arrived)`)
-  }, [bookings, logAdmin])
+  // ── admin data mutations (write straight to Firestore) ──
+  const saveCourt = useCallback(async (court) => {
+    const id = court.id || ('c' + Date.now())
+    const data = court.id
+      ? court
+      : { ...court, nameTh: court.nameTh || court.name, descTh: court.descTh || court.desc }
+    await setDoc(doc(db, 'courts', id), stripId({ ...data, id }))
+  }, [])
+  const deleteCourt = useCallback(async (id) => { await deleteDoc(doc(db, 'courts', id)) }, [])
+  const updateCourt = useCallback(async (id, patch) => { await updateDoc(doc(db, 'courts', id), patch) }, [])
 
-  const markNoShow = useCallback((bookingId) => {
-    const bk = bookings.find((b) => b.id === bookingId)
-    if (!bk || bk.status !== 'upcoming') return
-    setBookings((bs) => bs.map((b) => (b.id === bookingId ? { ...b, status: 'no_show', checkedIn: false } : b)))
-    logAdmin(`Marked no-show — ${bk.ref}`)
-  }, [bookings, logAdmin])
+  const savePromo = useCallback(async (promo) => {
+    const id = promo.id || ('p' + Date.now())
+    await setDoc(doc(db, 'promos', id), stripId({ ...promo, id }))
+  }, [])
+  const updatePromo = useCallback(async (id, patch) => { await updateDoc(doc(db, 'promos', id), patch) }, [])
 
-  // undo a mistaken check-in/no-show click — only for admin-confirmed transitions,
-  // not for bookings that were merely seeded/auto-completed by date
-  const revertBookingStatus = useCallback((bookingId) => {
-    const bk = bookings.find((b) => b.id === bookingId)
-    if (!bk) return
-    const wasNoShow = bk.status === 'no_show'
-    const wasCheckedIn = bk.status === 'completed' && bk.checkedIn
-    if (!wasNoShow && !wasCheckedIn) return
-    setBookings((bs) => bs.map((b) => (b.id === bookingId ? { ...b, status: 'upcoming', checkedIn: false } : b)))
-    logAdmin(`Reverted ${wasNoShow ? 'no-show' : 'check-in'} — ${bk.ref}`)
-  }, [bookings, logAdmin])
+  const updateMember = useCallback(async (id, patch) => { await updateDoc(doc(db, 'members', id), patch) }, [])
 
-  const adminAdjustStamps = useCallback((userId, delta, reason) => {
-    addStamp(userId, `Admin adjust: ${reason}`, delta, 'admin')
-    logAdmin(`Adjust stamps ${delta > 0 ? '+' : ''}${delta} for ${userId} — ${reason}`)
+  const saveSettings = useCallback(async (obj) => { await setDoc(doc(db, 'config', 'settings'), obj) }, [])
+
+  // ── admin manual booking — for phone-in / walk-in customers ──
+  const adminCreateBooking = useCallback(async ({ userId, courtId, date, hour, duration }) => {
+    const court = courts.find((c) => c.id === courtId)
+    const member = members.find((m) => m.id === userId)
+    const base = (isPeak(date, hour) ? court.pricePeak : court.priceOff) * (duration / 60)
+    const booking = {
+      id: nid('b'), ref: genRef(), userId, courtId, date, hour, duration,
+      price: base, discount: 0, total: base, payMethod: 'counter',
+      status: 'upcoming', createdAt: nowLocalISO(), voucherUsed: false,
+    }
+    await setDoc(doc(db, 'bookings', booking.id), stripId(booking))
+    await addStamp(userId, `Admin booking ${booking.ref} (phone/walk-in)`)
+    await logAdmin(`Booked ${booking.ref} for ${member?.name ?? userId} — ${lang === 'th' ? 'จองให้ลูกค้า (โทร/walk-in)' : 'manual booking (phone/walk-in)'}`)
+    return booking
+  }, [courts, members, addStamp, logAdmin, lang])
+
+  const adminAdjustStamps = useCallback(async (userId, delta, reason) => {
+    await addStamp(userId, `Admin adjust: ${reason}`, delta, 'admin')
+    await logAdmin(`Adjust stamps ${delta > 0 ? '+' : ''}${delta} for ${userId} — ${reason}`)
   }, [addStamp, logAdmin])
 
-  const adminIssueVoucher = useCallback((userId, reason) => {
-    setVouchers((v) => [{
-      id: nid('v'), userId, issued: todayISO(),
-      expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'manual',
-    }, ...v])
-    logAdmin(`Issue voucher to ${userId} — ${reason}`)
+  const adminIssueVoucher = useCallback(async (userId, reason) => {
+    await setDoc(doc(db, 'vouchers', nid('v')), {
+      userId, issued: todayISO(), expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'manual',
+    })
+    await logAdmin(`Issue voucher to ${userId} — ${reason}`)
   }, [settings.voucherDays, logAdmin])
 
   const value = {
-    lang, switchLang,
-    courts, setCourts, members, setMembers, bookings, setBookings,
-    promos, setPromos, vouchers, setVouchers, stampLog, settings, setSettings,
-    adminLog, logAdmin,
+    lang, switchLang, firebaseReady, authReady,
+    courts, members, bookings, promos, vouchers, stampLog, settings, adminLog,
+    saveCourt, deleteCourt, updateCourt, savePromo, updatePromo, updateMember, saveSettings,
+    logAdmin,
     user, login, logout, adminAuthed, setAdminAuthed, resetDemo,
-    registerEmail, verifyEmail, loginEmail, requestReset, confirmReset,
+    registerEmail, loginEmail, requestReset, resendVerification,
     notifications, notify, markNotifsRead,
-    slotStatus, createBooking, cancelBooking, validatePromo,
-    adminAdjustStamps, adminIssueVoucher,
-    checkInBooking, markNoShow, revertBookingStatus,
+    slotStatus, createMultiBooking, cancelBooking, validatePromo,
+    adminAdjustStamps, adminIssueVoucher, adminCreateBooking,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

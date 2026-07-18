@@ -2,7 +2,7 @@ import React from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
 import { todayISO, tierOf, TIERS, isPeak } from '../data/index.js'
-import { TierBadge, ChannelChip, hourLabel, useDateRange, DateRangeBar } from '../components/ui.jsx'
+import { TierBadge, ChannelChip, hourLabel, useDateRange, DateRangeBar, Icon, downloadCSV } from '../components/ui.jsx'
 
 const BarRow = ({ label, value, max, suffix = '', color = 'var(--lime)' }) => (
   <div className="mt-2">
@@ -14,7 +14,7 @@ const BarRow = ({ label, value, max, suffix = '', color = 'var(--lime)' }) => (
 )
 
 export default function Analytics() {
-  const { lang, bookings, courts, members, vouchers, promos } = useStore()
+  const { lang, bookings, courts, members, vouchers, promos, logAdmin } = useStore()
   const th = lang === 'th'
   const T = todayISO()
   const live = bookings.filter((b) => b.status !== 'cancelled')
@@ -50,7 +50,7 @@ export default function Analytics() {
   const byTier = TIERS.map((tier) => ({
     tier, n: active.filter((m) => tierOf(m.bookingsYear).key === tier.key).length,
   }))
-  const byChannel = ['line', 'google', 'email'].map((ch) => ({
+  const byChannel = ['line', 'email'].map((ch) => ({
     ch, n: active.filter((m) => m.channel === ch).length,
   }))
   const rangeBookingCount = {}
@@ -65,9 +65,56 @@ export default function Analytics() {
   const vouchersIssuedInRange = vouchers.filter((v) => v.issued >= range.from && v.issued <= range.to).length
   const promoUses = promos.reduce((s, p) => s + p.used, 0)
 
+  const exportCsv = () => {
+    const rows = [
+      [th ? `รายงาน & สถิติ (ช่วง: ${range.from} ถึง ${range.to})` : `Analytics (range: ${range.from} to ${range.to})`],
+      [],
+      [th ? 'KPI ของช่วงที่เลือก' : 'KPI for selected range'],
+      [th ? 'รายได้' : 'Revenue', revenueRange],
+      [th ? 'จำนวนการจอง' : 'Bookings', inRange.length],
+      [th ? 'ยอดเฉลี่ย/การจอง' : 'Avg / booking', avgTicket],
+      [th ? 'อัตรายกเลิก (%)' : 'Cancel rate (%)', cancelRate],
+      [],
+      [th ? 'รายได้แยกตามสนาม' : 'Revenue by court'],
+      [th ? 'สนาม' : 'Court', th ? 'รายได้' : 'Revenue'],
+      ...byCourt.map(({ c, rev }) => [th ? c.nameTh : c.name, rev]),
+      [],
+      [th ? 'Peak / Off-Peak' : 'Peak / Off-Peak'],
+      ['Peak', peakRev],
+      ['Off-Peak', offRev],
+      [],
+      [th ? 'ความนิยมตามช่วงเวลา' : 'Bookings by hour'],
+      [th ? 'ชั่วโมง' : 'Hour', th ? 'จำนวนจอง' : 'Bookings'],
+      ...byHour.map(({ h, n }) => [hourLabel(h), n]),
+      [],
+      [th ? 'สมาชิกตามระดับ (ยอดรวมปัจจุบัน ไม่ขึ้นกับช่วงวันที่)' : 'Members by tier (lifetime, not range-scoped)'],
+      [th ? 'ระดับ' : 'Tier', th ? 'จำนวน' : 'Count'],
+      ...byTier.map(({ tier, n }) => [tier.name, n]),
+      [],
+      [th ? 'สมาชิกตามช่องทาง (ยอดรวมปัจจุบัน)' : 'Members by channel (lifetime)'],
+      [th ? 'ช่องทาง' : 'Channel', th ? 'จำนวน' : 'Count'],
+      ...byChannel.map(({ ch, n }) => [ch, n]),
+      [],
+      [th ? 'Top 5 ลูกค้า (จองในช่วงที่เลือก)' : 'Top 5 members (bookings in range)'],
+      [th ? 'อันดับ' : 'Rank', th ? 'ชื่อ' : 'Name', th ? 'จำนวนจอง' : 'Bookings'],
+      ...topMembers.map(({ m, n }, i) => [i + 1, m.name, n]),
+      [],
+      [th ? 'Loyalty & โปรโมชัน' : 'Loyalty & promos'],
+      [th ? 'Voucher ออกในช่วงนี้' : 'Vouchers issued in range', vouchersIssuedInRange],
+      [th ? 'Voucher ใช้ได้ (รวมทั้งหมด)' : 'Active vouchers (lifetime)', vouchersActive],
+      [th ? 'Voucher ใช้แล้ว (รวมทั้งหมด)' : 'Used vouchers (lifetime)', vouchersUsed],
+      [th ? 'ใช้โค้ดส่วนลด (รวมทั้งหมด)' : 'Promo redemptions (lifetime)', promoUses],
+    ]
+    downloadCSV('bounce-analytics.csv', rows)
+    logAdmin('Export analytics CSV')
+  }
+
   return (
     <div>
-      <h1 className="a-title">{th ? 'รายงาน & สถิติ' : 'Analytics'}</h1>
+      <div className="row between wrap gap-3">
+        <h1 className="a-title">{th ? 'รายงาน & สถิติ' : 'Analytics'}</h1>
+        <button className="btn" onClick={exportCsv}><Icon name="download" size={16} /> {t('exportCsv', lang)}</button>
+      </div>
       <div className="mt-2"><DateRangeBar range={range} lang={lang} /></div>
 
       <div className="kpi-grid mt-4">

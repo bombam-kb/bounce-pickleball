@@ -82,7 +82,7 @@ export const MEMBERS = [
   },
   {
     id: 'u3', name: 'Sarah Miller', email: 'sarah.m@example.com', phone: '',
-    channel: 'google', country: 'US', lang: 'en', avatar: '🎾',
+    channel: 'email', country: 'US', lang: 'en', avatar: '🎾',
     stamps: 9, bookingsYear: 31, credits: 300, suspended: false,
     joined: addDays(T, -160), birthday: '1995-11-02',
   },
@@ -94,7 +94,7 @@ export const MEMBERS = [
   },
   {
     id: 'u5', name: 'Kenji Watanabe', email: 'kenji.w@example.com', phone: '',
-    channel: 'google', country: 'JP', lang: 'en', avatar: '🗻',
+    channel: 'email', country: 'JP', lang: 'en', avatar: '🗻',
     stamps: 0, bookingsYear: 52, credits: 500, suspended: false,
     joined: addDays(T, -300), birthday: '1990-06-18',
   },
@@ -106,21 +106,18 @@ export const MEMBERS = [
   },
 ]
 
-// Seed bookings around today. status: upcoming | completed | no_show | cancelled
+// Seed bookings around today. status: upcoming | completed | cancelled
 let bid = 0
 const B = (userId, courtId, dayOffset, hour, opts = {}) => {
   const date = addDays(T, dayOffset)
   const court = COURTS.find((c) => c.id === courtId)
   const price = isPeak(date, hour) ? court.pricePeak : court.priceOff
-  const status = opts.status || (dayOffset < 0 ? 'completed' : 'upcoming')
   return {
     id: 'b' + ++bid, ref: 'BNC-' + String(1000 + bid),
     userId, courtId, date, hour, duration: 60,
     price, discount: opts.discount || 0, total: opts.total ?? price - (opts.discount || 0),
     payMethod: opts.payMethod || 'promptpay',
-    status,
-    // admin explicitly confirmed the customer showed up (distinct from status='completed' inferred from date alone)
-    checkedIn: opts.checkedIn ?? status === 'completed',
+    status: opts.status || (dayOffset < 0 ? 'completed' : 'upcoming'),
     // pseudo transaction time, deterministic per-booking
     createdAt: `${addDays(T, dayOffset - 2)}T${String(9 + (bid % 11)).padStart(2, '0')}:${String((bid * 7) % 60).padStart(2, '0')}`,
     voucherUsed: opts.voucherUsed || false,
@@ -171,5 +168,6 @@ export const SEED_SETTINGS = {
   defaultLang: 'th',
   slotDuration: 60,
   voucherDays: 90,
+  advanceBookingDays: 14,
   gatewayKey: 'pk_test_••••••••7d2f',
 }

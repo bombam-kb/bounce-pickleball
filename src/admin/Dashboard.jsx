@@ -2,12 +2,12 @@ import React from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { todayISO, addDays } from '../data/index.js'
-import { hourLabel, StatusChip, useDateRange, DateRangeBar } from '../components/ui.jsx'
+import { hourLabel, StatusChip, useDateRange, DateRangeBar, Icon, downloadCSV } from '../components/ui.jsx'
 
 const daysBetween = (from, to) => Math.round((new Date(to) - new Date(from)) / 86400000) + 1
 
 export default function Dashboard() {
-  const { lang, bookings, courts, members } = useStore()
+  const { lang, bookings, courts, members, logAdmin } = useStore()
   const T = todayISO()
   const weekAgo = addDays(T, -6)
   const monthAgo = addDays(T, -29)
@@ -35,9 +35,37 @@ export default function Dashboard() {
     .filter((b) => b.hour >= nowHour)
     .sort((a, b) => a.hour - b.hour)
 
+  const th = lang === 'th'
+  const exportCsv = () => {
+    const rows = [
+      [th ? 'สรุป KPI' : 'KPI Summary'],
+      [th ? 'จองวันนี้' : 'Bookings today', todayBk.length],
+      [th ? 'จองสัปดาห์นี้' : 'Bookings this week', weekBk.length],
+      [th ? 'จองเดือนนี้' : 'Bookings this month', monthBk.length],
+      [th ? 'รายได้เดือนนี้' : 'Revenue this month', monthRevenue],
+      [],
+      [th ? `รายได้ตามวัน (${range.from} ถึง ${range.to})` : `Daily revenue (${range.from} to ${range.to})`],
+      [th ? 'วันที่' : 'Date', th ? 'จำนวนจอง' : 'Bookings', th ? 'รายได้' : 'Revenue'],
+      ...days.map((d, i) => [d, live.filter((b) => b.date === d).length, daily[i]]),
+      [],
+      [th ? 'การจองที่กำลังมาถึงวันนี้' : 'Upcoming today'],
+      ['Ref', th ? 'ผู้จอง' : 'Customer', th ? 'สนาม' : 'Court', th ? 'เวลา' : 'Time', '฿', th ? 'สถานะ' : 'Status'],
+      ...upcomingToday.map((b) => {
+        const m = members.find((x) => x.id === b.userId)
+        const c = courts.find((x) => x.id === b.courtId)
+        return [b.ref, m?.name, c ? (th ? c.nameTh : c.name) : '—', hourLabel(b.hour), b.total, b.status]
+      }),
+    ]
+    downloadCSV('bounce-dashboard.csv', rows)
+    logAdmin('Export dashboard CSV')
+  }
+
   return (
     <div>
-      <h1 className="a-title">{t('dashboard', lang)}</h1>
+      <div className="row between wrap gap-3">
+        <h1 className="a-title">{t('dashboard', lang)}</h1>
+        <button className="btn" onClick={exportCsv}><Icon name="download" size={16} /> {t('exportCsv', lang)}</button>
+      </div>
       <div className="kpi-grid mt-4">
         <div className="kpi"><div className="v">{todayBk.length}</div><div className="l">{t('todayBookings', lang)}</div></div>
         <div className="kpi"><div className="v">{weekBk.length}</div><div className="l">{t('weekBookings', lang)}</div></div>
@@ -105,7 +133,7 @@ export default function Dashboard() {
                   <tr key={b.id}>
                     <td className="num">{b.ref}</td>
                     <td>{m?.avatar} {m?.name}</td>
-                    <td>{lang === 'th' ? c.nameTh : c.name}</td>
+                    <td>{c ? (lang === 'th' ? c.nameTh : c.name) : '—'}</td>
                     <td className="num">{hourLabel(b.hour)}</td>
                     <td className="num">{b.total}</td>
                     <td><StatusChip status={b.status} lang={lang} /></td>

@@ -15,8 +15,7 @@ export default function MyBookings() {
       const past = b.date < todayISO() || (b.date === todayISO() && b.hour < new Date().getHours())
       return { ...b, status: b.status === 'upcoming' && past ? 'completed' : b.status }
     })
-    // no_show is an admin-side distinction — customers see it grouped under "completed"
-    .filter((b) => (tab === 'completed' ? (b.status === 'completed' || b.status === 'no_show') : b.status === tab))
+    .filter((b) => b.status === tab)
     .sort((a, b) => (tab === 'upcoming' ? 1 : -1) * ((a.date + a.hour) < (b.date + b.hour) ? -1 : 1))
 
   const pager = usePager(mine, 5)
@@ -40,7 +39,7 @@ export default function MyBookings() {
       <div className="col gap-3 mt-4">
         {mine.length === 0 && <div className="card-flat pad-6 tc muted">🏓 {t('noBookings', lang)}</div>}
         {pager.slice.map((b) => {
-          const court = courts.find((c) => c.id === b.courtId)
+          const court = courts.find((c) => c.id === b.courtId) || { photo: '#ccc', nameTh: '—', name: '—' }
           return (
             <div key={b.id} className="card" style={{ overflow: 'hidden' }}>
               <div style={{ height: 8, background: court.photo }} />

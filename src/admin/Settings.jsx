@@ -1,15 +1,18 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
 
 export default function Settings() {
-  const { lang, settings, setSettings, logAdmin, resetDemo } = useStore()
+  const { lang, settings, saveSettings, logAdmin, resetDemo } = useStore()
   const [form, setForm] = useState(settings)
   const [saved, setSaved] = useState(false)
   const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setSaved(false) }
 
+  // settings arrive asynchronously from Firestore — sync the form once loaded
+  useEffect(() => { setForm(settings) }, [settings])
+
   const save = () => {
-    setSettings(form)
+    saveSettings(form)
     logAdmin('Update general settings')
     setSaved(true)
   }
@@ -20,23 +23,9 @@ export default function Settings() {
       <div className="card pad-5 mt-4" style={{ maxWidth: 560 }}>
         <div className="col gap-4">
           <div>
-            <label className="label">{t('cancelPolicyLabel', lang)}</label>
-            <input className="input" type="number" min="0" value={form.cancelHours} onChange={(e) => set('cancelHours', +e.target.value)} />
-          </div>
-          <div>
-            <label className="label">{t('reminderLabel', lang)}</label>
-            <input className="input" type="number" min="0" value={form.reminderHours} onChange={(e) => set('reminderHours', +e.target.value)} />
-          </div>
-          <div>
-            <label className="label">{t('slotDuration', lang)}</label>
-            <select className="select" value={form.slotDuration} onChange={(e) => set('slotDuration', +e.target.value)}>
-              <option value={60}>60 {t('min', lang)}</option>
-              <option value={90}>90 {t('min', lang)}</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">{t('voucherValidity', lang)}</label>
-            <input className="input" type="number" min="1" value={form.voucherDays} onChange={(e) => set('voucherDays', +e.target.value)} />
+            <label className="label">{t('advanceBookingLabel', lang)}</label>
+            <input className="input" type="number" min="1" max="90" value={form.advanceBookingDays}
+              onChange={(e) => set('advanceBookingDays', Math.max(1, +e.target.value || 1))} />
           </div>
           <div>
             <label className="label">{t('defaultLang', lang)}</label>

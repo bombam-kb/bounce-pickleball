@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { TIERS, tierOf, todayISO, addDays } from '../data/index.js'
+import { DAY_NAMES, MONTH_NAMES, t } from '../i18n.js'
 
 const PATHS = {
   ball: <><circle cx="12" cy="12" r="9" /><circle cx="9" cy="9.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="14.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="13.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="15.5" cy="14.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="8.5" cy="15" r="1.2" fill="currentColor" stroke="none" /></>,
@@ -46,6 +47,69 @@ export const Modal = ({ onClose, children }) => (
     </div>
   </div>
 )
+
+// ── calendar date picker (user-facing "pick a date" popup) ────────────────
+const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate()
+const isoOf = (y, m, d) => {
+  const z = (n) => String(n).padStart(2, '0')
+  return `${y}-${z(m + 1)}-${z(d)}`
+}
+
+export const CalendarModal = ({ value, onSelect, onClose, minDate, maxDate, advanceDays, lang = 'th' }) => {
+  const init = new Date(value + 'T00:00:00')
+  const [viewY, setViewY] = useState(init.getFullYear())
+  const [viewM, setViewM] = useState(init.getMonth())
+
+  const firstDow = new Date(viewY, viewM, 1).getDay()
+  const total = daysInMonth(viewY, viewM)
+  const cells = [...Array(firstDow).fill(null), ...Array.from({ length: total }, (_, i) => i + 1)]
+
+  const prevLastDay = new Date(viewY, viewM, 0)
+  const canPrev = isoOf(prevLastDay.getFullYear(), prevLastDay.getMonth(), prevLastDay.getDate()) >= minDate
+  const nextFirstDay = new Date(viewY, viewM + 1, 1)
+  const canNext = isoOf(nextFirstDay.getFullYear(), nextFirstDay.getMonth(), nextFirstDay.getDate()) <= maxDate
+
+  const goPrev = () => { const d = new Date(viewY, viewM - 1, 1); setViewY(d.getFullYear()); setViewM(d.getMonth()) }
+  const goNext = () => { const d = new Date(viewY, viewM + 1, 1); setViewY(d.getFullYear()); setViewM(d.getMonth()) }
+  const today = todayISO()
+  const maxD = new Date(maxDate + 'T00:00:00')
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="modal-header">
+        <h3 style={{ fontSize: 16 }}>{MONTH_NAMES[lang][viewM]} {viewY}</h3>
+        <div className="cal-nav-row">
+          <button className="btn btn-sm btn-ghost" disabled={!canPrev} onClick={goPrev} aria-label="Previous month">
+            <Icon name="chevL" size={16} /> {lang === 'th' ? 'เดือนก่อน' : 'Prev'}
+          </button>
+          <button className="btn btn-sm btn-ghost" disabled={!canNext} onClick={goNext} aria-label="Next month">
+            {lang === 'th' ? 'เดือนถัดไป' : 'Next'} <span style={{ display: 'inline-block', transform: 'scaleX(-1)' }}><Icon name="chevL" size={16} /></span>
+          </button>
+        </div>
+      </div>
+      {advanceDays != null && (
+        <p className="tiny muted" style={{ marginTop: -6, marginBottom: 10 }}>
+          {t('calendarRangeNote', lang, { n: advanceDays, d: `${maxD.getDate()} ${MONTH_NAMES[lang][maxD.getMonth()]}` })}
+        </p>
+      )}
+      <div className="cal-grid mt-3">
+        {DAY_NAMES[lang].map((d) => <div key={d} className="cal-dow">{d}</div>)}
+        {cells.map((day, i) => {
+          if (day === null) return <div key={'e' + i} />
+          const iso = isoOf(viewY, viewM, day)
+          const disabled = iso < minDate || iso > maxDate
+          return (
+            <button key={iso} type="button"
+              className={`cal-day ${iso === value ? 'selected' : ''} ${iso === today ? 'today' : ''}`}
+              disabled={disabled} onClick={() => { onSelect(iso); onClose() }}>
+              {day}
+            </button>
+          )
+        })}
+      </div>
+    </Modal>
+  )
+}
 
 // darken a hex color so white text stays readable on it regardless of the
 // surrounding card (light admin tables AND the dark pine membership header)
@@ -96,7 +160,6 @@ export const StatusChip = ({ status, lang }) => {
   const map = {
     upcoming: ['chip-blue', lang === 'th' ? 'กำลังมาถึง' : 'Upcoming'],
     completed: ['chip-green', lang === 'th' ? 'เสร็จสิ้น' : 'Completed'],
-    no_show: ['chip-amber', lang === 'th' ? 'ไม่มาใช้บริการ' : 'No-show'],
     cancelled: ['chip-red', lang === 'th' ? 'ยกเลิก' : 'Cancelled'],
   }
   const [cls, label] = map[status] || ['chip-grey', status]
@@ -106,7 +169,6 @@ export const StatusChip = ({ status, lang }) => {
 export const ChannelChip = ({ channel }) => {
   const map = {
     line: ['#06C755', 'LINE'],
-    google: ['#4285F4', 'Google'],
     email: ['#8A968E', 'Email'],
   }
   const [color, label] = map[channel] || ['#8A968E', channel]
@@ -121,7 +183,7 @@ export const printSlip = (b, court, member, lang) => {
   const w = window.open('', '_blank', 'width=420,height=680')
   if (!w) { alert(th ? 'เบราว์เซอร์บล็อกหน้าต่างใหม่ — กรุณาอนุญาต popup' : 'Popup blocked — please allow popups'); return }
   const hourLbl = `${String(b.hour).padStart(2, '0')}:00`
-  const payLabel = { promptpay: 'QR PromptPay', card: th ? 'บัตรเครดิต/เดบิต' : 'Credit/Debit', credits: 'Credits', voucher: 'Free Voucher' }[b.payMethod] || b.payMethod
+  const payLabel = { promptpay: 'QR PromptPay', card: th ? 'บัตรเครดิต/เดบิต' : 'Credit/Debit', credits: 'Credits', voucher: 'Free Voucher', counter: th ? 'จองให้โดยพนักงาน' : 'Booked by staff' }[b.payMethod] || b.payMethod
   w.document.write(`<!doctype html><html lang="${lang}"><head><meta charset="utf-8">
 <title>${b.ref} — Bounce Pickleball House</title>
 <style>

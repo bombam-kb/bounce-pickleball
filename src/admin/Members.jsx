@@ -5,7 +5,7 @@ import { tierOf, todayISO } from '../data/index.js'
 import { Icon, Modal, TierBadge, ChannelChip, StampCard, downloadCSV, usePager, Pager } from '../components/ui.jsx'
 
 export default function Members() {
-  const { lang, members, setMembers, vouchers, stampLog, adminAdjustStamps, adminIssueVoucher, adminLog, logAdmin } = useStore()
+  const { lang, members, updateMember, vouchers, stampLog, adminAdjustStamps, adminIssueVoucher, adminLog, logAdmin } = useStore()
   const [q, setQ] = useState('')
   const [fTier, setFTier] = useState('all')
   const [fChannel, setFChannel] = useState('all')
@@ -36,13 +36,13 @@ export default function Members() {
   }
 
   const toggleSuspend = (x) => {
-    setMembers((ms) => ms.map((y) => (y.id === x.id ? { ...y, suspended: !y.suspended } : y)))
+    updateMember(x.id, { suspended: !x.suspended })
     logAdmin(`${x.suspended ? 'Unsuspend' : 'Suspend'} ${x.name}`)
   }
   const addCredits = (x) => {
     const v = prompt(lang === 'th' ? 'จำนวน Credits (+/-)' : 'Credits amount (+/-)', '100')
     if (v === null || isNaN(+v)) return
-    setMembers((ms) => ms.map((y) => (y.id === x.id ? { ...y, credits: Math.max(0, y.credits + +v) } : y)))
+    updateMember(x.id, { credits: Math.max(0, x.credits + +v) })
     logAdmin(`Credits ${+v > 0 ? '+' : ''}${v} for ${x.name}`)
   }
 
@@ -65,7 +65,6 @@ export default function Members() {
         <select className="select" style={{ maxWidth: 160 }} value={fChannel} onChange={(e) => setFChannel(e.target.value)}>
           <option value="all">{t('all', lang)} — {t('channel', lang)}</option>
           <option value="line">LINE</option>
-          <option value="google">Google</option>
           <option value="email">Email</option>
         </select>
       </div>
