@@ -69,44 +69,65 @@ export function StoreProvider({ children }) {
   // ── session / device state (not business data → kept local) ──
   const [user, setUser] = useState(null)          // logged-in member
   const [isAdmin, setIsAdmin] = useState(false)    // current auth user is staff (in admins/)
+  const [authUid, setAuthUid] = useState(null)     // signed-in Firebase uid — drives private listeners
   const [authReady, setAuthReady] = useState(false)
   const [notifications, setNotifications] = useState(() => {
     try { return JSON.parse(localStorage.getItem('bounce_notifs') || '[]') } catch { return [] }
   })
 
-  // subscribe to all collections in real time (+ seed on first run)
+  // shared row mapper + sort
+  const rowsOf = (snap, sort) => {
+    const r = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    return sort ? r.sort(sort) : r
+  }
+  const errLog = (name) => (e) => console.error(`[Bounce] ${name} listener`, e)
+
+  // ── public catalog (courts, promos, settings): readable without auth, so
+  //    subscribe once on mount. Also runs the one-time seed check. ──
   useEffect(() => {
     if (!firebaseReady) { setAuthReady(true); return }
     const unsubs = []
     let cancelled = false
     ;(async () => {
-      try { await seedIfEmpty() } catch (e) { console.error('[Bounce] seed failed', e) }
+      try { await seedIfEmpty() } catch (e) { console.error('[Bounce] seed check failed', e) }
       if (cancelled) return
-      const sub = (col, setter, sort) =>
-        onSnapshot(collection(db, col), (snap) => {
-          let rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-          if (sort) rows = rows.sort(sort)
-          setter(rows)
-        }, (err) => console.error(`[Bounce] ${col} listener`, err))
-      const byDateDesc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)
-      unsubs.push(sub('courts', setCourts, (a, b) => (a.id < b.id ? -1 : 1)))
-      unsubs.push(sub('members', setMembers))
-      unsubs.push(sub('bookings', setBookings))
-      unsubs.push(sub('promos', setPromos))
-      unsubs.push(sub('vouchers', setVouchers, byDateDesc))
-      unsubs.push(sub('stampLog', setStampLog, byDateDesc))
-      unsubs.push(sub('adminLog', setAdminLog))
-      unsubs.push(onSnapshot(doc(db, 'config', 'settings'), (d) => {
-        if (d.exists()) setSettingsState(d.data())
-      }))
+      unsubs.push(onSnapshot(collection(db, 'courts'),
+        (s) => setCourts(rowsOf(s, (a, b) => (a.id < b.id ? -1 : 1))), errLog('courts')))
+      unsubs.push(onSnapshot(collection(db, 'promos'), (s) => setPromos(rowsOf(s)), errLog('promos')))
+      unsubs.push(onSnapshot(doc(db, 'config', 'settings'),
+        (d) => { if (d.exists()) setSettingsState(d.data()) }, errLog('settings')))
     })()
     return () => { cancelled = true; unsubs.forEach((u) => u && u()) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // ── private collections (members, bookings, vouchers, stampLog, adminLog):
+  //    require auth to read, so (re)subscribe whenever the signed-in user
+  //    changes. Attaching before login would hit PERMISSION_DENIED and never
+  //    recover — leaving these empty even after logging in. ──
+  useEffect(() => {
+    if (!firebaseReady) return
+    if (!authUid) {
+      setMembers([]); setBookings([]); setVouchers([]); setStampLog([]); setAdminLog([])
+      return
+    }
+    const byDateDesc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)
+    const unsubs = [
+      onSnapshot(collection(db, 'members'), (s) => setMembers(rowsOf(s)), errLog('members')),
+      onSnapshot(collection(db, 'bookings'), (s) => setBookings(rowsOf(s)), errLog('bookings')),
+      onSnapshot(collection(db, 'vouchers'), (s) => setVouchers(rowsOf(s, byDateDesc)), errLog('vouchers')),
+      onSnapshot(collection(db, 'stampLog'), (s) => setStampLog(rowsOf(s, byDateDesc)), errLog('stampLog')),
+      onSnapshot(collection(db, 'adminLog'), (s) => setAdminLog(rowsOf(s)), errLog('adminLog')),
+    ]
+    return () => unsubs.forEach((u) => u && u())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUid])
 
   // auth session → determine staff vs customer, resolve member doc into `user`
   useEffect(() => {
     if (!firebaseReady) return
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      setAuthUid(fbUser ? fbUser.uid : null)
       if (fbUser) {
         let admin = false
         try {
