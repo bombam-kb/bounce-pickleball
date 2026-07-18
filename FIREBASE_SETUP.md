@@ -109,6 +109,35 @@ first run the app **auto-seeds** the demo dataset (3 courts, sample members,
 bookings, promos, vouchers, and settings) into Firestore. It only seeds when
 the `courts` collection is empty, so it won't duplicate on later runs.
 
+## 8. Restrict your API key (do this before/at production)
+
+The `VITE_FB_API_KEY` is a **client-side web key** — it ships inside the
+browser bundle and is *meant* to be public (it only identifies the project;
+real security is enforced by Firestore rules + Authorized domains). So it is
+**not a secret**, and GitHub's secret scanner flagging it is a false positive.
+
+That said, you should still lock it to your own domains so a copied key can't be
+used from anywhere else. This is Firebase's own recommended production step:
+
+1. Open Google Cloud credentials for the project:
+   `https://console.cloud.google.com/apis/credentials?project=<your-project-id>`
+2. Click the key named **"Browser key (auto created by Firebase)"**.
+3. **Application restrictions → Websites** → add each origin that should work:
+   - `localhost` and `127.0.0.1` (local dev)
+   - your production domain, e.g. `your-project.vercel.app`
+   - `<your-project-id>.firebaseapp.com` and `<your-project-id>.web.app`
+4. **API restrictions → Restrict key** → allow only: **Identity Toolkit API**,
+   **Token Service API**, and **Cloud Firestore API**.
+5. **Save.**
+
+> Never commit the built `dist/` folder — it inlines these values. `dist/` is
+> git-ignored; Vercel builds from source using the env vars you set in its
+> dashboard, so committed build output is both unnecessary and how keys leak.
+>
+> If you ever need the exposed key to be truly dead (not just restricted),
+> create a new API key in the Credentials page, update it in `.env` **and**
+> Vercel, delete the old key, and redeploy.
+
 ---
 
 ## How the customer flow works now
