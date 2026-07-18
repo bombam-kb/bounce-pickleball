@@ -456,21 +456,45 @@ export function StoreProvider({ children }) {
 
   const saveSettings = useCallback(async (obj) => { await setDoc(doc(db, 'config', 'settings'), obj) }, [])
 
-  // ── admin manual booking — for phone-in / walk-in customers ──
-  const adminCreateBooking = useCallback(async ({ userId, courtId, date, hour, duration }) => {
-    const court = courts.find((c) => c.id === courtId)
+  // ── admin manual booking — for phone-in / walk-in customers. Books one or
+  //    more slots (any court/date/hour) for a member in a single batch, with
+  //    one stamp per booking and any earned free-vouchers. ──
+  const adminCreateMultiBooking = useCallback(async ({ userId, items, duration = 60 }) => {
+    if (!items.length) return []
     const member = members.find((m) => m.id === userId)
-    const base = (isPeak(date, hour) ? court.pricePeak : court.priceOff) * (duration / 60)
-    const booking = {
-      id: nid('b'), ref: genRef(), userId, courtId, date, hour, duration,
-      price: base, discount: 0, total: base, payMethod: 'counter',
-      status: 'upcoming', createdAt: nowLocalISO(), voucherUsed: false,
+    const createdAt = nowLocalISO()
+    const newBookings = items.map((it) => {
+      const court = courts.find((c) => c.id === it.courtId)
+      const base = (isPeak(it.date, it.hour) ? court.pricePeak : court.priceOff) * (duration / 60)
+      return {
+        id: nid('b'), ref: genRef(), userId, courtId: it.courtId, date: it.date, hour: it.hour, duration,
+        price: base, discount: 0, total: base, payMethod: 'counter',
+        status: 'upcoming', createdAt, voucherUsed: false,
+      }
+    })
+
+    const batch = writeBatch(db)
+    newBookings.forEach((b) => batch.set(doc(db, 'bookings', b.id), stripId(b)))
+    if (member) {
+      let stamps = (member.stamps || 0) + newBookings.length
+      let earned = 0
+      while (stamps >= 10) { stamps -= 10; earned += 1 }
+      batch.update(doc(db, 'members', userId), {
+        stamps, bookingsYear: (member.bookingsYear || 0) + newBookings.length,
+      })
+      newBookings.forEach((b) => batch.set(doc(db, 'stampLog', nid('s')), {
+        userId, date: todayISO(), delta: 1, note: `Admin booking ${b.ref} (phone/walk-in)`, by: 'admin',
+      }))
+      for (let k = 0; k < earned; k += 1) {
+        batch.set(doc(db, 'vouchers', nid('v')), {
+          userId, issued: todayISO(), expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'stamps',
+        })
+      }
     }
-    await setDoc(doc(db, 'bookings', booking.id), stripId(booking))
-    await addStamp(userId, `Admin booking ${booking.ref} (phone/walk-in)`)
-    await logAdmin(`Booked ${booking.ref} for ${member?.name ?? userId} — ${lang === 'th' ? 'จองให้ลูกค้า (โทร/walk-in)' : 'manual booking (phone/walk-in)'}`)
-    return booking
-  }, [courts, members, addStamp, logAdmin, lang])
+    await batch.commit()
+    await logAdmin(`Booked ${newBookings.length} slot(s) for ${member?.name ?? userId} — ${lang === 'th' ? 'จองให้ลูกค้า (โทร/walk-in)' : 'manual booking (phone/walk-in)'}`)
+    return newBookings
+  }, [courts, members, settings.voucherDays, logAdmin, lang])
 
   const adminAdjustStamps = useCallback(async (userId, delta, reason) => {
     await addStamp(userId, `Admin adjust: ${reason}`, delta, 'admin')
@@ -493,7 +517,7 @@ export function StoreProvider({ children }) {
     registerEmail, loginEmail, requestReset, resendVerification,
     notifications, notify, markNotifsRead,
     slotStatus, createMultiBooking, cancelBooking, validatePromo,
-    adminAdjustStamps, adminIssueVoucher, adminCreateBooking,
+    adminAdjustStamps, adminIssueVoucher, adminCreateMultiBooking,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
