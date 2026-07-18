@@ -68,8 +68,8 @@ export function StoreProvider({ children }) {
 
   // ── session / device state (not business data → kept local) ──
   const [user, setUser] = useState(null)          // logged-in member
+  const [isAdmin, setIsAdmin] = useState(false)    // current auth user is staff (in admins/)
   const [authReady, setAuthReady] = useState(false)
-  const [adminAuthed, setAdminAuthedState] = useState(() => localStorage.getItem('bounce_admin') === '1')
   const [notifications, setNotifications] = useState(() => {
     try { return JSON.parse(localStorage.getItem('bounce_notifs') || '[]') } catch { return [] }
   })
@@ -103,18 +103,30 @@ export function StoreProvider({ children }) {
     return () => { cancelled = true; unsubs.forEach((u) => u && u()) }
   }, [])
 
-  // auth session → resolve the matching member doc into `user`
+  // auth session → determine staff vs customer, resolve member doc into `user`
   useEffect(() => {
     if (!firebaseReady) return
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser && fbUser.emailVerified) {
+      if (fbUser) {
+        let admin = false
         try {
-          const snap = await getDoc(doc(db, 'members', fbUser.uid))
-          if (snap.exists()) setUser({ id: snap.id, ...snap.data() })
-        } catch (e) { console.error('[Bounce] load member', e) }
+          const adminSnap = await getDoc(doc(db, 'admins', fbUser.uid))
+          admin = adminSnap.exists()
+        } catch (e) { console.error('[Bounce] admin check', e) }
+        setIsAdmin(admin)
+        if (admin) {
+          setUser(null)                                 // staff are not customers
+        } else if (fbUser.emailVerified) {
+          try {
+            const snap = await getDoc(doc(db, 'members', fbUser.uid))
+            if (snap.exists()) setUser({ id: snap.id, ...snap.data() })
+          } catch (e) { console.error('[Bounce] load member', e) }
+        } else {
+          setUser((u) => (u && u.channel === 'line' ? u : null))
+        }
       } else {
-        // signed out / unverified — keep an active LINE demo session if any
-        setUser((u) => (u && u.channel === 'line' ? u : null))
+        setIsAdmin(false)
+        setUser((u) => (u && u.channel === 'line' ? u : null)) // keep LINE demo session
       }
       setAuthReady(true)
     })
@@ -139,16 +151,27 @@ export function StoreProvider({ children }) {
     localStorage.setItem('bounce_lang', l)
   }, [])
 
-  const setAdminAuthed = useCallback((v) => {
-    setAdminAuthedState(v)
-    localStorage.setItem('bounce_admin', v ? '1' : '0')
+  // ── admin (staff) auth via Firebase — must be listed in the admins/ collection ──
+  const adminLogin = useCallback(async (email, password) => {
+    if (!firebaseReady) return { error: 'notconfigured' }
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password)
+      const adminSnap = await getDoc(doc(db, 'admins', cred.user.uid))
+      if (!adminSnap.exists()) { await signOut(auth); return { error: 'notadmin' } }
+      return { ok: true } // onAuthStateChanged sets isAdmin
+    } catch (e) {
+      return { error: mapAuthError(e) }
+    }
+  }, [])
+  const adminLogout = useCallback(async () => {
+    try { if (firebaseReady && auth.currentUser) await signOut(auth) } catch { /* ignore */ }
+    setIsAdmin(false)
   }, [])
 
   // clears device-local state only — does not wipe the shared Firestore data
   const resetDemo = useCallback(async () => {
     try { if (firebaseReady && auth.currentUser) await signOut(auth) } catch { /* ignore */ }
     localStorage.removeItem('bounce_notifs')
-    localStorage.removeItem('bounce_admin')
     window.location.reload()
   }, [])
 
@@ -444,7 +467,7 @@ export function StoreProvider({ children }) {
     courts, members, bookings, promos, vouchers, stampLog, settings, adminLog,
     saveCourt, deleteCourt, updateCourt, savePromo, updatePromo, updateMember, saveSettings,
     logAdmin,
-    user, login, logout, adminAuthed, setAdminAuthed, resetDemo,
+    user, login, logout, isAdmin, adminLogin, adminLogout, resetDemo,
     registerEmail, loginEmail, requestReset, resendVerification,
     notifications, notify, markNotifsRead,
     slotStatus, createMultiBooking, cancelBooking, validatePromo,

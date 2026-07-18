@@ -30,40 +30,78 @@ the wording under **Authentication → Templates**.
 
 1. **Build → Firestore Database → Create database**.
 2. Choose a location (e.g. `asia-southeast1` for Thailand).
-3. Start in **production mode**, then paste the rules below under the **Rules**
-   tab and **Publish**. These let signed-in users manage their own data and
-   read shared catalog data (courts/promos). Tighten further for real
-   production, but this is a safe starting point:
+3. Start in **production mode**. You'll publish the secure rules in **step 3a**
+   below (after you've created an admin account), so for now you can leave the
+   default rules — but the app can't seed or write until step 3a is done.
+
+> **Seeding note:** the app tries to auto-seed demo data on first load, but
+> secure rules block an anonymous first visitor from writing. Seed the database
+> once with `node scripts/seed.mjs` while your rules are temporarily open
+> (`match /{document=**} { allow read, write: if true; }`), then publish the
+> secure rules from step 3a. See the comment at the top of `scripts/seed.mjs`.
+
+### 3a. Create an admin account, then publish these rules
+
+Staff sign in to the admin panel with a **real Firebase account** that is listed
+in an `admins` collection. Set that up first:
+
+1. **Create the account** — Authentication → **Users** → **Add user** → enter
+   the owner's email + a password. (Email verification isn't required for
+   admins.)
+2. **Copy its UID** — it appears in the Users table next to the account.
+3. **Mark it as admin** — Firestore Database → **Start collection** (or add a
+   document) → collection id `admins` → **Document ID = the UID you copied** →
+   add any field (e.g. `role` = `owner`) → Save.
+4. **Publish these rules** (Firestore → Rules → paste → Publish):
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // shared catalog — anyone signed in can read; writes are admin-only
-    // (do admin writes from a trusted environment or lock these to a claim)
-    match /courts/{id}    { allow read: if true;  allow write: if request.auth != null; }
-    match /promos/{id}    { allow read: if true;  allow write: if request.auth != null; }
-    match /config/{id}    { allow read: if true;  allow write: if request.auth != null; }
 
-    // members: a user can read/write only their own member doc
-    match /members/{uid} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null && request.auth.uid == uid;
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    // bookings / vouchers / stamps: readable & writable by signed-in users
-    match /bookings/{id}  { allow read, write: if request.auth != null; }
-    match /vouchers/{id}  { allow read, write: if request.auth != null; }
-    match /stampLog/{id}  { allow read, write: if request.auth != null; }
-    match /adminLog/{id}  { allow read, write: if request.auth != null; }
+    // staff registry — managed from the Firebase console only.
+    // a signed-in user may read only their own entry (to check admin status).
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // public catalog — anyone can read; only admins can change
+    match /courts/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /promos/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /config/{id} { allow read: if true; allow write: if isAdmin(); }
+
+    // members — a customer manages only their own doc; admins manage any
+    match /members/{uid} {
+      allow read: if request.auth != null;
+      allow create, update: if (request.auth != null && request.auth.uid == uid) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // transactional data — any signed-in user (customer books/earns; admin too)
+    match /bookings/{id} { allow read, write: if request.auth != null; }
+    match /vouchers/{id} { allow read, write: if request.auth != null; }
+    match /stampLog/{id} { allow read, write: if request.auth != null; }
+
+    // admin activity log — readable by signed-in users, written by admins
+    match /adminLog/{id} { allow read: if request.auth != null; allow write: if isAdmin(); }
   }
 }
 ```
 
-> ⚠️ These rules are intentionally permissive to keep the demo working
-> client-side. For a real launch, move admin writes (courts, promos, other
-> members, adminLog) behind a custom claim or a backend, and scope
-> bookings/vouchers to their owner.
+Now the admin panel login (`/admin`) accepts that email + password, and only
+that account can edit courts, promos, settings, and other members.
+
+> **Remaining hardening (optional):** `bookings`, `vouchers`, and `stampLog`
+> allow any signed-in user to write. That's fine for launch, but to fully lock
+> it down you'd scope each write to its owner (`request.resource.data.userId ==
+> request.auth.uid`) with an `isAdmin()` exception — a follow-up once the core
+> flow is proven.
 
 ## 4. Register a Web App and copy the config
 
@@ -154,9 +192,13 @@ used from anywhere else. This is Firebase's own recommended production step:
 it signs into the sample member without real authentication. To make LINE real
 you'd add a LINE Login → Firebase custom-token exchange via a small backend.
 
+**Admin panel** (`/admin`) signs in with a real Firebase account that must be
+listed in the `admins` collection (see step 3a). Only that account can edit
+courts, promos, settings, and members under the secure rules.
+
 ## What's stored where
 
 - **Firestore**: `members`, `bookings`, `vouchers`, `stampLog`, `promos`,
-  `courts`, `adminLog`, and `config/settings`.
-- **Device-local (localStorage)**: language choice, the admin-panel unlock, and
-  in-app notification history — these are per-device UI state, not shared data.
+  `courts`, `adminLog`, `admins`, and `config/settings`.
+- **Device-local (localStorage)**: language choice and in-app notification
+  history — per-device UI state, not shared data.
