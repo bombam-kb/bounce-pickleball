@@ -6,7 +6,7 @@ const MSG = {
   th: {
     working: 'กำลังเข้าสู่ระบบด้วย LINE…',
     ok: 'สำเร็จ — กำลังพาคุณกลับหน้าหลัก',
-    badstate: 'ลิงก์เข้าสู่ระบบไม่ถูกต้องหรือหมดอายุ — ลองใหม่',
+    badstate: 'ลิงก์เข้าสู่ระบบไม่ถูกต้องหรือหมดอายุ — ลองใหม่จากปุ่มเข้าสู่ระบบ (โหมดส่วนตัวอาจต้องกดใหม่)',
     line_denied: 'คุณยกเลิกการเข้าสู่ระบบ LINE',
     suspended: 'บัญชีนี้ถูกระงับ — ติดต่อเจ้าหน้าที่',
     notconfigured: 'ยังไม่ได้ตั้งค่า LINE / Firebase Admin — ดู FIREBASE_SETUP.md',
@@ -16,7 +16,7 @@ const MSG = {
   en: {
     working: 'Signing in with LINE…',
     ok: 'Done — taking you home',
-    badstate: 'Login link invalid or expired — try again',
+    badstate: 'Login link invalid or expired — tap Log in again (private browsing may need a retry)',
     line_denied: 'LINE login was cancelled',
     suspended: 'Account suspended — contact staff',
     notconfigured: 'LINE / Firebase Admin not configured — see FIREBASE_SETUP.md',
@@ -29,6 +29,7 @@ export default function LineCallback() {
   const { lang, completeLineLogin } = useStore()
   const [status, setStatus] = useState('working') // working | ok | error
   const [err, setErr] = useState(null)
+  const [detail, setDetail] = useState(null)
   const copy = MSG[lang] || MSG.th
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export default function LineCallback() {
       } catch (e) {
         if (cancelled) return
         setErr(e?.code || 'unknown')
+        setDetail(e?.message || null)
         setStatus('error')
       }
     })()
@@ -63,6 +65,9 @@ export default function LineCallback() {
         {status === 'ok' && copy.ok}
         {status === 'error' && (copy[err] || copy.unknown)}
       </h2>
+      {status === 'error' && import.meta.env.DEV && detail && (
+        <p className="tiny mt-3" style={{ color: 'var(--ink-3)', wordBreak: 'break-word' }}>{detail}</p>
+      )}
       {status === 'error' && (
         <button className="btn btn-lime btn-lg mt-5" onClick={() => { window.location.replace('/') }}>
           {lang === 'th' ? 'กลับหน้าหลัก' : 'Back home'}

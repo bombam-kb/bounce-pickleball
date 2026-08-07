@@ -209,13 +209,25 @@ LINE_CHANNEL_SECRET=your_channel_secret
 4. Create a Firebase **service account** so the API can mint custom tokens:
    - Firebase Console → Project settings → **Service accounts**
    - **Generate new private key** → download the JSON file
-   - Put the entire JSON on one line in `.env` as
-     `FIREBASE_SERVICE_ACCOUNT_JSON={...}`
-   - On Vercel: Project → Settings → Environment Variables — set
-     `VITE_LINE_CHANNEL_ID`, `LINE_CHANNEL_SECRET`,
-     `FIREBASE_SERVICE_ACCOUNT_JSON`, and the existing `VITE_FB_*` vars
+   - **Local:** save as `service-account.json` in the project root (gitignored)
+     and set `FIREBASE_SERVICE_ACCOUNT_PATH=./service-account.json` in `.env`
+   - **Vercel:** paste the JSON as **one line** into
+     `FIREBASE_SERVICE_ACCOUNT_JSON`, plus `VITE_LINE_CHANNEL_ID`,
+     `LINE_CHANNEL_SECRET`, and the existing `VITE_FB_*` vars — then Redeploy
 
 5. Restart `npm run dev` after editing `.env`.
+
+### Test LINE Login on local first
+
+1. In LINE Developers → Callback URL, include:
+   `http://localhost:5173/auth/line/callback`
+2. `npm run dev` → open **http://localhost:5173/** (same host you registered)
+3. Open DevTools → Console (watch `[LINE]` logs)
+4. Click **เข้าสู่ระบบด้วย LINE**, approve, then return to the callback page
+5. On success you land on home signed in; on failure the callback page shows
+   a detail line in dev mode — share that text if it still fails
+
+Do not push until local login works.
 
 > Never commit `LINE_CHANNEL_SECRET` or the service-account JSON. If a secret
 > was pasted into chat or a ticket, rotate it in the LINE / Google Cloud

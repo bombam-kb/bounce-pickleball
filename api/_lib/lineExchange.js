@@ -2,31 +2,48 @@
  * LINE Login → Firebase custom-token exchange (server-only).
  * Used by the Vercel `/api/auth/line` function and the Vite dev middleware.
  */
+import fs from 'node:fs'
+import path from 'node:path'
 import admin from 'firebase-admin'
 
 function getEnv(name, fallback = '') {
   return (process.env[name] || fallback).trim()
 }
 
+function loadServiceAccount() {
+  const raw = getEnv('FIREBASE_SERVICE_ACCOUNT_JSON')
+  if (raw) {
+    try {
+      return JSON.parse(raw)
+    } catch {
+      const err = new Error('FIREBASE_SERVICE_ACCOUNT_JSON is invalid JSON (use one line, or FIREBASE_SERVICE_ACCOUNT_PATH)')
+      err.code = 'notconfigured'
+      throw err
+    }
+  }
+
+  const rel = getEnv('FIREBASE_SERVICE_ACCOUNT_PATH')
+  if (rel) {
+    const file = path.isAbsolute(rel) ? rel : path.resolve(process.cwd(), rel)
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'))
+    } catch (e) {
+      const err = new Error(`Cannot read service account file: ${file} (${e.message})`)
+      err.code = 'notconfigured'
+      throw err
+    }
+  }
+
+  const err = new Error('Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_PATH')
+  err.code = 'notconfigured'
+  throw err
+}
+
 function initAdmin() {
   if (admin.apps.length) return admin.app()
 
   const projectId = getEnv('VITE_FB_PROJECT_ID') || getEnv('FB_PROJECT_ID')
-  const raw = getEnv('FIREBASE_SERVICE_ACCOUNT_JSON')
-  if (!raw) {
-    const err = new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not configured')
-    err.code = 'notconfigured'
-    throw err
-  }
-
-  let sa
-  try {
-    sa = JSON.parse(raw)
-  } catch {
-    const err = new Error('FIREBASE_SERVICE_ACCOUNT_JSON is invalid JSON')
-    err.code = 'notconfigured'
-    throw err
-  }
+  const sa = loadServiceAccount()
 
   return admin.initializeApp({
     credential: admin.credential.cert(sa),
@@ -159,7 +176,6 @@ export async function handleLineExchange(req, res) {
     } else {
       const patch = { channel: 'line', lineUserId: profile.userId }
       if (avatarUrl) patch.avatarUrl = avatarUrl
-      // keep existing display name unless empty
       const cur = snap.data() || {}
       if (!cur.name) patch.name = name
       await ref.update(patch)
@@ -179,7 +195,7 @@ export async function handleLineExchange(req, res) {
   } catch (e) {
     const codeName = e?.code === 'notconfigured' ? 'notconfigured' : 'unknown'
     console.error('[line-auth]', e)
-    send(codeName === 'notconfigured' ? 500 : 500, {
+    send(500, {
       error: codeName,
       detail: e?.message || 'exchange failed',
     })
