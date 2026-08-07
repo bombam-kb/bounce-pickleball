@@ -1,6 +1,7 @@
 // LINE Login (OAuth) helpers — client side only. Channel secret stays on the server.
 
 const STATE_KEY = 'bounce_line_oauth_state'
+const PENDING_KEY = 'bounce_line_oauth_pending'
 
 export function lineLoginConfigured() {
   return Boolean(import.meta.env.VITE_LINE_CHANNEL_ID)
@@ -20,6 +21,7 @@ export function startLineLogin() {
   }
   const state = crypto.randomUUID()
   sessionStorage.setItem(STATE_KEY, state)
+  sessionStorage.removeItem(PENDING_KEY)
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: channelId,
@@ -30,8 +32,15 @@ export function startLineLogin() {
   window.location.assign(`https://access.line.me/oauth2/v2.1/authorize?${params}`)
 }
 
-/** Validate CSRF state and return the authorization code from the callback URL. */
-export function takeLineCallbackCode() {
+/**
+ * Pull the authorization code out of the callback URL once.
+ * Survives React Strict Mode / Suspense remounts by stashing the code in
+ * sessionStorage and sharing a single in-flight exchange promise.
+ */
+function extractCallbackCode() {
+  const already = sessionStorage.getItem(PENDING_KEY)
+  if (already) return already
+
   const url = new URL(window.location.href)
   const err = url.searchParams.get('error')
   if (err) {
@@ -42,12 +51,16 @@ export function takeLineCallbackCode() {
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   const expected = sessionStorage.getItem(STATE_KEY)
-  sessionStorage.removeItem(STATE_KEY)
   if (!code || !state || !expected || state !== expected) {
     const e = new Error('Invalid LINE login state')
     e.code = 'badstate'
     throw e
   }
+  sessionStorage.removeItem(STATE_KEY)
+  sessionStorage.setItem(PENDING_KEY, code)
+  // Drop code from the address bar so refresh doesn't re-use it
+  url.search = ''
+  window.history.replaceState({}, '', url.pathname)
   return code
 }
 
@@ -65,4 +78,26 @@ export async function exchangeLineCode(code) {
     throw e
   }
   return data.token
+}
+
+// One shared promise so Strict Mode double-mount doesn't burn the auth code twice
+let callbackFlight = null
+
+/** Validate callback + exchange for a Firebase custom token (single-flight). */
+export function finishLineLogin() {
+  if (!callbackFlight) {
+    callbackFlight = (async () => {
+      try {
+        const code = extractCallbackCode()
+        const token = await exchangeLineCode(code)
+        sessionStorage.removeItem(PENDING_KEY)
+        return token
+      } catch (e) {
+        // Allow a manual retry after a hard failure (user clicks login again)
+        callbackFlight = null
+        throw e
+      }
+    })()
+  }
+  return callbackFlight
 }

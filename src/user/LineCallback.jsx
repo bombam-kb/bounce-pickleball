@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useStore } from '../store.jsx'
-import { takeLineCallbackCode, exchangeLineCode } from '../lineAuth.js'
+import { finishLineLogin } from '../lineAuth.js'
 
 const MSG = {
   th: {
@@ -35,8 +35,8 @@ export default function LineCallback() {
     let cancelled = false
     ;(async () => {
       try {
-        const code = takeLineCallbackCode()
-        const token = await exchangeLineCode(code)
+        const token = await finishLineLogin()
+        if (cancelled) return
         const r = await completeLineLogin(token)
         if (cancelled) return
         if (r?.error) {
