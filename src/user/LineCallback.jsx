@@ -1,0 +1,73 @@
+import React, { useEffect, useState } from 'react'
+import { useStore } from '../store.jsx'
+import { takeLineCallbackCode, exchangeLineCode } from '../lineAuth.js'
+
+const MSG = {
+  th: {
+    working: 'กำลังเข้าสู่ระบบด้วย LINE…',
+    ok: 'สำเร็จ — กำลังพาคุณกลับหน้าหลัก',
+    badstate: 'ลิงก์เข้าสู่ระบบไม่ถูกต้องหรือหมดอายุ — ลองใหม่',
+    line_denied: 'คุณยกเลิกการเข้าสู่ระบบ LINE',
+    suspended: 'บัญชีนี้ถูกระงับ — ติดต่อเจ้าหน้าที่',
+    notconfigured: 'ยังไม่ได้ตั้งค่า LINE / Firebase Admin — ดู FIREBASE_SETUP.md',
+    line_token: 'แลก token จาก LINE ไม่สำเร็จ — ตรวจ Callback URL',
+    unknown: 'เกิดข้อผิดพลาด — ลองใหม่อีกครั้ง',
+  },
+  en: {
+    working: 'Signing in with LINE…',
+    ok: 'Done — taking you home',
+    badstate: 'Login link invalid or expired — try again',
+    line_denied: 'LINE login was cancelled',
+    suspended: 'Account suspended — contact staff',
+    notconfigured: 'LINE / Firebase Admin not configured — see FIREBASE_SETUP.md',
+    line_token: 'LINE token exchange failed — check Callback URL',
+    unknown: 'Something went wrong — please try again',
+  },
+}
+
+export default function LineCallback() {
+  const { lang, completeLineLogin } = useStore()
+  const [status, setStatus] = useState('working') // working | ok | error
+  const [err, setErr] = useState(null)
+  const copy = MSG[lang] || MSG.th
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const code = takeLineCallbackCode()
+        const token = await exchangeLineCode(code)
+        const r = await completeLineLogin(token)
+        if (cancelled) return
+        if (r?.error) {
+          setErr(r.error)
+          setStatus('error')
+          return
+        }
+        setStatus('ok')
+        window.setTimeout(() => { window.location.replace('/') }, 600)
+      } catch (e) {
+        if (cancelled) return
+        setErr(e?.code || 'unknown')
+        setStatus('error')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [completeLineLogin])
+
+  return (
+    <div className="page" style={{ paddingTop: 48, textAlign: 'center' }}>
+      <div className="success-ball" style={{ animation: status === 'working' ? undefined : 'none' }}>🏓</div>
+      <h2 className="mt-4" style={{ fontSize: 20 }}>
+        {status === 'working' && copy.working}
+        {status === 'ok' && copy.ok}
+        {status === 'error' && (copy[err] || copy.unknown)}
+      </h2>
+      {status === 'error' && (
+        <button className="btn btn-lime btn-lg mt-5" onClick={() => { window.location.replace('/') }}>
+          {lang === 'th' ? 'กลับหน้าหลัก' : 'Back home'}
+        </button>
+      )}
+    </div>
+  )
+}

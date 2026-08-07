@@ -188,9 +188,38 @@ used from anywhere else. This is Firebase's own recommended production step:
    resend the link from the "check your email" screen).
 4. **Forgot password** → Firebase emails a **reset link**.
 
-**LINE login** remains a demo shortcut (Firebase has no native LINE provider);
-it signs into the sample member without real authentication. To make LINE real
-you'd add a LINE Login → Firebase custom-token exchange via a small backend.
+**LINE login** uses LINE Login (OAuth) → a small server endpoint
+(`/api/auth/line`) that verifies the LINE code and returns a Firebase
+**custom token**. The SPA then calls `signInWithCustomToken`.
+
+### LINE Login setup
+
+1. Create a **LINE Login** channel at
+   <https://developers.line.biz/console/>.
+2. Under **LINE Login → Callback URL**, add both:
+   - `http://localhost:5173/auth/line/callback` (Vite dev)
+   - `https://<your-production-domain>/auth/line/callback`
+3. Copy **Channel ID** and **Channel secret** into `.env`:
+
+```
+VITE_LINE_CHANNEL_ID=1234567890
+LINE_CHANNEL_SECRET=your_channel_secret
+```
+
+4. Create a Firebase **service account** so the API can mint custom tokens:
+   - Firebase Console → Project settings → **Service accounts**
+   - **Generate new private key** → download the JSON file
+   - Put the entire JSON on one line in `.env` as
+     `FIREBASE_SERVICE_ACCOUNT_JSON={...}`
+   - On Vercel: Project → Settings → Environment Variables — set
+     `VITE_LINE_CHANNEL_ID`, `LINE_CHANNEL_SECRET`,
+     `FIREBASE_SERVICE_ACCOUNT_JSON`, and the existing `VITE_FB_*` vars
+
+5. Restart `npm run dev` after editing `.env`.
+
+> Never commit `LINE_CHANNEL_SECRET` or the service-account JSON. If a secret
+> was pasted into chat or a ticket, rotate it in the LINE / Google Cloud
+> consoles.
 
 **Admin panel** (`/admin`) signs in with a real Firebase account that must be
 listed in the `admins` collection (see step 3a). Only that account can edit

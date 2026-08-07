@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
   sendEmailVerification, sendPasswordResetEmail, onAuthStateChanged, updateProfile,
+  signInWithCustomToken,
 } from 'firebase/auth'
 import {
   collection, doc, getDoc, getDocs, onSnapshot,
@@ -137,17 +138,22 @@ export function StoreProvider({ children }) {
         setIsAdmin(admin)
         if (admin) {
           setUser(null)                                 // staff are not customers
-        } else if (fbUser.emailVerified) {
-          try {
-            const snap = await getDoc(doc(db, 'members', fbUser.uid))
-            if (snap.exists()) setUser({ id: snap.id, ...snap.data() })
-          } catch (e) { console.error('[Bounce] load member', e) }
         } else {
-          setUser((u) => (u && u.channel === 'line' ? u : null))
+          // Email/password accounts must verify; LINE (custom token) has no email verify step.
+          const isPassword = fbUser.providerData.some((p) => p.providerId === 'password')
+          if (isPassword && !fbUser.emailVerified) {
+            setUser(null)
+          } else {
+            try {
+              const snap = await getDoc(doc(db, 'members', fbUser.uid))
+              if (snap.exists()) setUser({ id: snap.id, ...snap.data() })
+              else setUser(null)
+            } catch (e) { console.error('[Bounce] load member', e) }
+          }
         }
       } else {
         setIsAdmin(false)
-        setUser((u) => (u && u.channel === 'line' ? u : null)) // keep LINE demo session
+        setUser(null)
       }
       setAuthReady(true)
     })
@@ -196,11 +202,21 @@ export function StoreProvider({ children }) {
     window.location.reload()
   }, [])
 
-  // ── LINE login: demo shortcut (Firebase has no native LINE provider) ──
-  const login = useCallback((channel) => {
-    const base = members.find((m) => m.id === 'u1') ?? MEMBERS[0]
-    setUser({ ...base, channel })
-  }, [members])
+  // ── LINE login: custom token from /api/auth/line (see api/_lib/lineExchange.js) ──
+  const completeLineLogin = useCallback(async (firebaseToken) => {
+    if (!firebaseReady) return { error: 'notconfigured' }
+    try {
+      const cred = await signInWithCustomToken(auth, firebaseToken)
+      const snap = await getDoc(doc(db, 'members', cred.user.uid))
+      if (snap.exists() && snap.data().suspended) {
+        await signOut(auth)
+        return { error: 'suspended' }
+      }
+      return { ok: true } // onAuthStateChanged populates `user`
+    } catch (e) {
+      return { error: mapAuthError(e) }
+    }
+  }, [])
 
   const logout = useCallback(async () => {
     try { if (firebaseReady && auth.currentUser) await signOut(auth) } catch { /* ignore */ }
@@ -532,7 +548,7 @@ export function StoreProvider({ children }) {
     courts, members, bookings, promos, vouchers, stampLog, settings, adminLog,
     saveCourt, deleteCourt, updateCourt, savePromo, updatePromo, updateMember, saveSettings,
     logAdmin,
-    user, login, logout, isAdmin, adminLogin, adminLogout, resetDemo,
+    user, completeLineLogin, logout, isAdmin, adminLogin, adminLogout, resetDemo,
     registerEmail, loginEmail, requestReset, resendVerification,
     notifications, notify, markNotifsRead,
     slotStatus, createMultiBooking, cancelBooking, validatePromo,

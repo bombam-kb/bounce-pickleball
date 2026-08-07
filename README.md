@@ -36,7 +36,7 @@ npm run build    # production build → dist/
 **ฝั่งลูกค้า**
 - Court Browser: ปฏิทิน 7 วันแบบ horizontal scroll + ตาราง Time Slot (ว่าง / จองแล้ว / ปิด / Peak)
 - Fixed Booking: เลือกสนาม → วัน → เวลา → สรุป → Promo Code / Voucher → ชำระเงิน (QR PromptPay จำลอง ยืนยันอัตโนมัติใน 3 วิ) → Booking Reference
-- Login จำลอง: LINE (ปุ่มเขียว) / Google / Email
+- Login: LINE Login จริง (OAuth → Firebase custom token) / Email (Firebase Auth)
 - My Bookings: กำลังจะมาถึง / เสร็จสิ้น / ยกเลิก + ยกเลิกตาม policy
 - My Membership: Stamp Card 10 ช่อง (ครบ 10 ออก Free Voucher อัตโนมัติ + คืนแสตมป์เมื่อยกเลิก), ระดับสมาชิก Bronze/Silver/Gold + progress bar, ประวัติแสตมป์
 - สลับภาษา TH/EN ทุกหน้า

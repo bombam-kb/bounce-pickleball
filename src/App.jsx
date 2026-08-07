@@ -5,6 +5,7 @@ import { firebaseReady } from './firebase.js'
 // code-split: customers never download the admin bundle (and vice versa)
 const UserApp = lazy(() => import('./user/UserApp.jsx'))
 const AdminApp = lazy(() => import('./admin/AdminApp.jsx'))
+const LineCallback = lazy(() => import('./user/LineCallback.jsx'))
 
 const Loading = () => (
   <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
@@ -13,16 +14,23 @@ const Loading = () => (
   </div>
 )
 
+const isLineCallback = () => window.location.pathname === '/auth/line/callback'
+
 // Two-sided app: customer site at "/", staff panel at "/admin"
 export default function App() {
   const [side, setSide] = useState(window.location.pathname.startsWith('/admin') ? 'admin' : 'user')
+  const [lineCb, setLineCb] = useState(isLineCallback)
 
   const go = (s) => {
     window.history.pushState({}, '', s === 'admin' ? '/admin' : '/')
     setSide(s)
+    setLineCb(false)
   }
   useEffect(() => {
-    const onPop = () => setSide(window.location.pathname.startsWith('/admin') ? 'admin' : 'user')
+    const onPop = () => {
+      setLineCb(isLineCallback())
+      setSide(window.location.pathname.startsWith('/admin') ? 'admin' : 'user')
+    }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
@@ -39,9 +47,15 @@ export default function App() {
         </div>
       )}
       <Suspense fallback={<Loading />}>
-        {side === 'admin' ? <AdminApp goUser={() => go('user')} /> : <UserApp />}
+        {lineCb ? (
+          <LineCallback />
+        ) : side === 'admin' ? (
+          <AdminApp goUser={() => go('user')} />
+        ) : (
+          <UserApp />
+        )}
       </Suspense>
-      {side === 'user' && (
+      {side === 'user' && !lineCb && (
         <button onClick={() => go('admin')} title="Staff only" style={{
           position: 'fixed', bottom: 84, right: 12, zIndex: 90,
           border: '2px solid var(--stroke)', borderRadius: 999,

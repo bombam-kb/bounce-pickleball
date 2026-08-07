@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
 import { Icon } from '../components/ui.jsx'
+import { startLineLogin, lineLoginConfigured } from '../lineAuth.js'
 
 const LineLogo = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
@@ -30,7 +31,7 @@ const ERR = {
   mismatch: { th: 'รหัสผ่านทั้งสองช่องไม่ตรงกัน', en: 'Passwords do not match' },
   toomany: { th: 'พยายามหลายครั้งเกินไป — ลองใหม่ภายหลัง', en: 'Too many attempts — try again later' },
   network: { th: 'เชื่อมต่อไม่ได้ — ตรวจสอบอินเทอร์เน็ต', en: 'Network error — check your connection' },
-  notconfigured: { th: 'ยังไม่ได้ตั้งค่า Firebase — ดู FIREBASE_SETUP.md', en: 'Firebase not configured — see FIREBASE_SETUP.md' },
+  notconfigured: { th: 'ยังไม่ได้ตั้งค่า Firebase / LINE — ดู FIREBASE_SETUP.md', en: 'Firebase / LINE not configured — see FIREBASE_SETUP.md' },
   unknown: { th: 'เกิดข้อผิดพลาด — ลองใหม่อีกครั้ง', en: 'Something went wrong — please try again' },
 }
 
@@ -45,7 +46,7 @@ const CheckMail = ({ title, body, email }) => (
 )
 
 export default function Login({ onDone }) {
-  const { lang, login, registerEmail, loginEmail, requestReset, resendVerification } = useStore()
+  const { lang, registerEmail, loginEmail, requestReset, resendVerification } = useStore()
   const [mode, setMode] = useState('menu') // menu | elogin | eregister | echeck | ereset | eresetsent
   const [f, setF] = useState({ name: '', email: '', pass: '', pass2: '' })
   const [err, setErr] = useState(null)
@@ -54,11 +55,12 @@ export default function Login({ onDone }) {
 
   const th = lang === 'th'
   const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e.target.value })); setErr(null); setNote(null) }
-  const social = (channel) => {
+  const socialLine = () => {
+    if (!lineLoginConfigured()) { setErr('notconfigured'); return }
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission().catch(() => {})
     }
-    login(channel); onDone()
+    try { startLineLogin() } catch { setErr('notconfigured') }
   }
   const run = async (fn) => { setBusy(true); const r = await fn(); setBusy(false); return r }
   const goto = (to) => { setMode(to); setErr(null); setNote(null) }
@@ -104,9 +106,10 @@ export default function Login({ onDone }) {
 
       {mode === 'menu' && (
         <div className="col gap-3 mt-6">
-          <button className="btn btn-line btn-lg btn-full" onClick={() => social('line')}>
+          <button className="btn btn-line btn-lg btn-full" onClick={socialLine} disabled={busy}>
             <LineLogo /> {t('loginLine', lang)}
           </button>
+          {errChip}
           <div className="tc tiny">{t('loginHintTh', lang)}</div>
           <button className="btn btn-lg btn-full" onClick={() => goto('elogin')}>
             ✉️ {t('loginEmail', lang)}

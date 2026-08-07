@@ -1,0 +1,187 @@
+/**
+ * LINE Login → Firebase custom-token exchange (server-only).
+ * Used by the Vercel `/api/auth/line` function and the Vite dev middleware.
+ */
+import admin from 'firebase-admin'
+
+function getEnv(name, fallback = '') {
+  return (process.env[name] || fallback).trim()
+}
+
+function initAdmin() {
+  if (admin.apps.length) return admin.app()
+
+  const projectId = getEnv('VITE_FB_PROJECT_ID') || getEnv('FB_PROJECT_ID')
+  const raw = getEnv('FIREBASE_SERVICE_ACCOUNT_JSON')
+  if (!raw) {
+    const err = new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not configured')
+    err.code = 'notconfigured'
+    throw err
+  }
+
+  let sa
+  try {
+    sa = JSON.parse(raw)
+  } catch {
+    const err = new Error('FIREBASE_SERVICE_ACCOUNT_JSON is invalid JSON')
+    err.code = 'notconfigured'
+    throw err
+  }
+
+  return admin.initializeApp({
+    credential: admin.credential.cert(sa),
+    projectId: projectId || sa.project_id,
+  })
+}
+
+async function readJsonBody(req) {
+  if (req.body && typeof req.body === 'object') return req.body
+  if (typeof req.body === 'string' && req.body) {
+    try { return JSON.parse(req.body) } catch { return {} }
+  }
+  // Node IncomingMessage (Vite middleware)
+  if (typeof req.on === 'function') {
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    const raw = Buffer.concat(chunks).toString('utf8')
+    if (!raw) return {}
+    try { return JSON.parse(raw) } catch { return {} }
+  }
+  return {}
+}
+
+function todayISO() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * @param {import('http').IncomingMessage} req
+ * @param {import('http').ServerResponse} res
+ */
+export async function handleLineExchange(req, res) {
+  const send = (status, data) => {
+    res.statusCode = status
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-store')
+    res.end(JSON.stringify(data))
+  }
+
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204
+    res.end()
+    return
+  }
+
+  if (req.method !== 'POST') {
+    send(405, { error: 'method' })
+    return
+  }
+
+  const channelId = getEnv('VITE_LINE_CHANNEL_ID') || getEnv('LINE_CHANNEL_ID')
+  const channelSecret = getEnv('LINE_CHANNEL_SECRET')
+  if (!channelId || !channelSecret) {
+    send(500, { error: 'notconfigured', detail: 'LINE channel env missing' })
+    return
+  }
+
+  let body
+  try {
+    body = await readJsonBody(req)
+  } catch {
+    send(400, { error: 'badrequest' })
+    return
+  }
+
+  const code = typeof body.code === 'string' ? body.code.trim() : ''
+  const redirectUri = typeof body.redirectUri === 'string' ? body.redirectUri.trim() : ''
+  if (!code || !redirectUri) {
+    send(400, { error: 'badrequest' })
+    return
+  }
+
+  try {
+    const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        client_id: channelId,
+        client_secret: channelSecret,
+      }),
+    })
+    const tokenJson = await tokenRes.json().catch(() => ({}))
+    if (!tokenRes.ok || !tokenJson.access_token) {
+      send(401, { error: 'line_token', detail: tokenJson.error_description || tokenJson.error || 'token exchange failed' })
+      return
+    }
+
+    const profileRes = await fetch('https://api.line.me/v2/profile', {
+      headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+    })
+    const profile = await profileRes.json().catch(() => ({}))
+    if (!profileRes.ok || !profile.userId) {
+      send(401, { error: 'line_profile', detail: profile.message || 'profile failed' })
+      return
+    }
+
+    initAdmin()
+    const uid = `line_${profile.userId}`
+    const db = admin.firestore()
+    const ref = db.collection('members').doc(uid)
+    const snap = await ref.get()
+    const name = (profile.displayName || 'LINE User').slice(0, 60)
+    const avatarUrl = typeof profile.pictureUrl === 'string' ? profile.pictureUrl : ''
+
+    if (!snap.exists) {
+      await ref.set({
+        name,
+        email: '',
+        phone: '',
+        channel: 'line',
+        country: 'TH',
+        lang: 'th',
+        avatar: '🏓',
+        avatarUrl,
+        lineUserId: profile.userId,
+        stamps: 0,
+        bookingsYear: 0,
+        credits: 0,
+        suspended: false,
+        joined: todayISO(),
+        birthday: null,
+      })
+    } else {
+      const patch = { channel: 'line', lineUserId: profile.userId }
+      if (avatarUrl) patch.avatarUrl = avatarUrl
+      // keep existing display name unless empty
+      const cur = snap.data() || {}
+      if (!cur.name) patch.name = name
+      await ref.update(patch)
+    }
+
+    if (snap.exists && snap.data()?.suspended) {
+      send(403, { error: 'suspended' })
+      return
+    }
+
+    const firebaseToken = await admin.auth().createCustomToken(uid, {
+      provider: 'line',
+      lineUserId: profile.userId,
+    })
+
+    send(200, { token: firebaseToken })
+  } catch (e) {
+    const codeName = e?.code === 'notconfigured' ? 'notconfigured' : 'unknown'
+    console.error('[line-auth]', e)
+    send(codeName === 'notconfigured' ? 500 : 500, {
+      error: codeName,
+      detail: e?.message || 'exchange failed',
+    })
+  }
+}
