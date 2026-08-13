@@ -2,10 +2,10 @@ import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
 import { Icon } from '../components/ui.jsx'
+import Logo from '../components/Logo.jsx'
 import Dashboard from './Dashboard.jsx'
 import Courts from './Courts.jsx'
 import Bookings from './Bookings.jsx'
-import Promos from './Promos.jsx'
 import Members from './Members.jsx'
 import Analytics from './Analytics.jsx'
 import Settings from './Settings.jsx'
@@ -14,7 +14,6 @@ const SCREENS = [
   { key: 'dashboard', icon: 'chart', comp: Dashboard },
   { key: 'courtMgmt', icon: 'grid', comp: Courts },
   { key: 'bookingMgmt', icon: 'calendar', comp: Bookings },
-  { key: 'promoMgmt', icon: 'tag', comp: Promos },
   { key: 'memberMgmt', icon: 'users', comp: Members },
   { key: 'analytics', icon: 'trend', comp: Analytics },
   { key: 'settings', icon: 'gear', comp: Settings },
@@ -50,8 +49,8 @@ export default function AdminApp({ goUser }) {
       <div className="u-shell" style={{ paddingBottom: 0 }}>
         <div className="page" style={{ paddingTop: 64 }}>
           <div className="card-pine pad-6 tc">
-            <div style={{ fontSize: 40 }}>🏓</div>
-            <h2 style={{ color: 'var(--lime)', fontSize: 20 }}>{t('adminTitle', lang)}</h2>
+            <Logo variant="dark" size="md" />
+            <h2 className="mt-4" style={{ color: 'var(--lime)', fontSize: 20 }}>{t('adminTitle', lang)}</h2>
             <p className="tiny mt-1" style={{ color: 'var(--cream)' }}>{t('adminLogin', lang)}</p>
             <form className="mt-4 col gap-2" onSubmit={submit}>
               <input className="input" type="email" placeholder="admin@email.com"
@@ -78,8 +77,7 @@ export default function AdminApp({ goUser }) {
     <div className="a-shell">
       <aside className="a-side">
         <div className="u-logo">
-          <span style={{ fontSize: 20 }}>🏓</span>
-          <span>BOUNCE<small>ADMIN PANEL</small></span>
+          <Logo variant="dark" size="sm" />
         </div>
         {SCREENS.map((s) => (
           <button key={s.key} className={`a-nav-btn ${screen === s.key ? 'on' : ''}`} onClick={() => setScreen(s.key)}>

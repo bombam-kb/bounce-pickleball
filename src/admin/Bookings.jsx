@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { todayISO, isPeak } from '../data/index.js'
-import { Icon, Modal, StatusChip, hourLabel, downloadCSV, usePager, Pager } from '../components/ui.jsx'
+import { Icon, Modal, StatusChip, hourLabel, AvatarGlyph, downloadCSV, usePager, Pager } from '../components/ui.jsx'
 
 // "2026-07-12T21:47" → "อา. 12 ก.ค. · 21:47" (seed data may be date-only)
 const fmtCreated = (iso, lang) => {
@@ -33,7 +33,7 @@ function BookForCustomerModal({ onClose }) {
 
   const priceOf = (p) => {
     const c = courts.find((x) => x.id === p.courtId)
-    return isPeak(p.date, p.hour) ? c.pricePeak : c.priceOff
+    return isPeak(p.hour, c) ? c.pricePeak : c.priceOff
   }
   const total = picks.reduce((s, p) => s + priceOf(p), 0)
   const isPicked = (h) => picks.some((p) => p.courtId === courtId && p.date === date && p.hour === h)
@@ -63,12 +63,12 @@ function BookForCustomerModal({ onClose }) {
     return (
       <Modal onClose={onClose}>
         <div className="tc" style={{ paddingTop: 8 }}>
-          <div className="success-ball" style={{ width: 60, height: 60, fontSize: 28 }}>🏓</div>
+          <div className="success-ball" style={{ width: 60, height: 60 }} />
           <h3 className="mt-3" style={{ fontSize: 17 }}>{t('bookForSuccess', lang)}</h3>
           <div className="num mt-1" style={{ fontSize: 20 }}>{success[0].ref}</div>
           <p className="muted mt-1">{success.length} {th ? 'ช่องเวลา' : 'slot(s)'}</p>
           <div className="card-flat pad-4 mt-3" style={{ textAlign: 'left' }}>
-            <div className="row between"><span className="muted tiny">{t('customer', lang)}</span><b>{guestMode ? `🎾 ${guest.name} (Guest)` : `${customer.avatar} ${customer.name}`}</b></div>
+            <div className="row between"><span className="muted tiny">{t('customer', lang)}</span><b className="row gap-1" style={{ alignItems: 'center' }}>{guestMode ? <><Icon name="ball" size={14} /> {guest.name} (Guest)</> : <><AvatarGlyph avatar={customer.avatar} size={16} /> {customer.name}</>}</b></div>
             {success.map((b) => {
               const c = courts.find((x) => x.id === b.courtId)
               return (
@@ -114,7 +114,7 @@ function BookForCustomerModal({ onClose }) {
         </div>
       ) : customer ? (
         <div className="card-flat pad-3 row between">
-          <span>{customer.avatar} <b>{customer.name}</b> <span className="tiny muted">· {customer.email}</span></span>
+          <span className="row gap-1" style={{ alignItems: 'center' }}><AvatarGlyph avatar={customer.avatar} size={16} /> <b>{customer.name}</b> <span className="tiny muted">· {customer.email}</span></span>
           <button className="btn btn-sm btn-ghost" onClick={() => { setCustomer(null); setQ('') }}>{t('changeCustomer', lang)}</button>
         </div>
       ) : (
@@ -126,7 +126,7 @@ function BookForCustomerModal({ onClose }) {
               {matches.map((m) => (
                 <button key={m.id} className="row between pad-3" style={{ width: '100%', textAlign: 'left', borderBottom: '1px solid #E3E1D5' }}
                   onClick={() => setCustomer(m)}>
-                  <span>{m.avatar} <b>{m.name}</b></span>
+                  <span className="row gap-1" style={{ alignItems: 'center' }}><AvatarGlyph avatar={m.avatar} size={16} /> <b>{m.name}</b></span>
                   <span className="tiny muted">{m.email || m.phone}</span>
                 </button>
               ))}
@@ -160,7 +160,7 @@ function BookForCustomerModal({ onClose }) {
           {Array.from({ length: court.close - court.open }, (_, i) => {
             const h = court.open + i
             const st = slotStatus(court, date, h)
-            const peak = isPeak(date, h)
+            const peak = isPeak(h, court)
             const picked = isPicked(h)
             return (
               <button key={h} type="button"
@@ -214,7 +214,7 @@ export default function Bookings() {
   const [fStatus, setFStatus] = useState('all')
   const [fSlotDate, setFSlotDate] = useState('')       // วันที่จอง (slot date)
   const [fCreatedDate, setFCreatedDate] = useState('') // วันที่ทำรายการ (transaction date)
-  const [sort, setSort] = useState({ key: 'created', dir: 'desc' }) // newest transactions first
+  const [sort, setSort] = useState({ key: 'slot', dir: 'desc' })
   const [bookForOpen, setBookForOpen] = useState(false)
 
   const memberName = (b) => members.find((x) => x.id === b.userId)?.name ?? ''
@@ -316,13 +316,13 @@ export default function Bookings() {
         <div className="tbl-wrap">
           <table className="tbl">
             <thead><tr>
-              <Th k="ref">Ref</Th>
+              <Th k="slot">{t('bookedSlot', lang)}</Th>
               <Th k="customer">{t('customer', lang)}</Th>
               <Th k="court">{t('location', lang)}</Th>
-              <Th k="slot">{t('bookedSlot', lang)}</Th>
-              <Th k="created">{t('createdAtCol', lang)}</Th>
-              <Th k="total">฿</Th>
+              <Th k="total">{t('price', lang)}</Th>
               <Th k="status">{t('status', lang)}</Th>
+              <Th k="created">{t('createdAtCol', lang)}</Th>
+              <Th k="ref">Ref</Th>
               <th></th>
             </tr></thead>
             <tbody>
@@ -330,13 +330,13 @@ export default function Bookings() {
                 const m = members.find((x) => x.id === b.userId)
                 return (
                   <tr key={b.id}>
-                    <td className="num">{b.ref}</td>
-                    <td>{m?.avatar} {m?.name}</td>
-                    <td>{courtName(b) || '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(b.date, lang)} · <b className="num">{hourLabel(b.hour)}</b></td>
-                    <td className="tiny" style={{ whiteSpace: 'nowrap' }}>{fmtCreated(b.createdAt, lang)}</td>
-                    <td className="num">{b.voucherUsed ? '🎁 0' : b.total}</td>
+                    <td><span className="row gap-1" style={{ alignItems: 'center' }}><AvatarGlyph avatar={m?.avatar} size={16} /> {m?.name}</span></td>
+                    <td>{courtName(b) || '—'}</td>
+                    <td className="num">{b.voucherUsed || b.total === 0 ? t('free', lang) : `฿${b.total}`}</td>
                     <td><StatusChip status={b.status} lang={lang} /></td>
+                    <td className="tiny" style={{ whiteSpace: 'nowrap' }}>{fmtCreated(b.createdAt, lang)}</td>
+                    <td className="num">{b.ref}</td>
                     <td>
                       {b.status === 'upcoming' && (
                         <button className="btn btn-sm btn-danger"

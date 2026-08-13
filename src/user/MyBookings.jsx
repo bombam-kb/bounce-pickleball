@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { todayISO } from '../data/index.js'
-import { StatusChip, hourLabel, Icon, usePager, Pager, printSlip } from '../components/ui.jsx'
+import { StatusChip, hourRangeLabel, Icon, usePager, Pager, printSlip } from '../components/ui.jsx'
 
 export default function MyBookings() {
   const { lang, user, bookings, courts } = useStore()
@@ -32,7 +32,7 @@ export default function MyBookings() {
       </div>
 
       <div className="col gap-3 mt-4">
-        {mine.length === 0 && <div className="card-flat pad-6 tc muted">🏓 {t('noBookings', lang)}</div>}
+        {mine.length === 0 && <div className="card-flat pad-6 tc muted row center gap-2"><Icon name="ball" size={18} /> {t('noBookings', lang)}</div>}
         {pager.slice.map((b) => {
           const court = courts.find((c) => c.id === b.courtId) || { photo: '#ccc', nameTh: '—', name: '—' }
           return (
@@ -45,7 +45,7 @@ export default function MyBookings() {
                 </div>
                 <div className="row gap-2 mt-2 tiny wrap">
                   <span><Icon name="calendar" size={13} /> {fmtDate(b.date, lang)}</span>
-                  <span><Icon name="clock" size={13} /> {hourLabel(b.hour)} · {b.duration} {t('min', lang)}</span>
+                  <span><Icon name="clock" size={13} /> {hourRangeLabel(b.hour, b.duration)}</span>
                   <span className="num">{b.ref}</span>
                 </div>
                 <div className="row between mt-3">

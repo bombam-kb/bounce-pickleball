@@ -2,24 +2,26 @@ import React, { useState, useEffect } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { isPeak, todayISO } from '../data/index.js'
-import { Icon, Modal, hourLabel, printSlip } from '../components/ui.jsx'
+import { Icon, Modal, hourRangeLabel, printSlip } from '../components/ui.jsx'
+import Logo from '../components/Logo.jsx'
 
 // step: summary → qr (if promptpay) → success
 export default function Booking({ cart, onDone, onBack }) {
-  const { lang, courts, user, vouchers, validatePromo, createMultiBooking } = useStore()
+  const { lang, courts, user, vouchers, createMultiBooking } = useStore()
   const { date, items } = cart
 
-  const [promoInput, setPromoInput] = useState('')
-  const [promo, setPromo] = useState(null)
-  const [promoErr, setPromoErr] = useState(false)
   const [voucherId, setVoucherId] = useState(null)
   const [payMethod, setPayMethod] = useState('promptpay')
   const [step, setStep] = useState('summary')
   const [result, setResult] = useState(null)
 
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [step])
+
   const priced = items.map((it) => {
     const court = courts.find((c) => c.id === it.courtId)
-    const peak = isPeak(date, it.hour)
+    const peak = isPeak(it.hour, court)
     return { ...it, court, peak, price: peak ? court.pricePeak : court.priceOff }
   })
   const subtotal = priced.reduce((s, x) => s + x.price, 0)
@@ -27,16 +29,12 @@ export default function Booking({ cart, onDone, onBack }) {
   const myVouchers = vouchers.filter((v) => v.userId === user?.id && !v.used && v.expiry >= todayISO())
   const voucherBlocked = !singleItem || priced[0].peak // off-peak only, and only for a single-item cart
 
-  let discount = 0
-  if (voucherId) discount = subtotal
-  else if (promo) discount = promo.type === 'fixed' ? Math.min(promo.value, subtotal) : Math.round(subtotal * promo.value / 100)
+  const discount = voucherId ? subtotal : 0
   const total = subtotal - discount
 
-  const applyPromo = () => {
-    const p = validatePromo(promoInput)
-    setPromo(p)
-    setPromoErr(!p)
-    if (p) setVoucherId(null)
+  const toggleVoucher = (id) => {
+    if (voucherBlocked) return
+    setVoucherId((cur) => (cur === id ? null : id))
   }
 
   const doPay = () => {
@@ -46,7 +44,7 @@ export default function Booking({ cart, onDone, onBack }) {
   const finish = async () => {
     try {
       const r = await createMultiBooking(items.map((it) => ({ courtId: it.courtId, date, hour: it.hour })),
-        { promo: voucherId ? null : promo, voucherId, payMethod })
+        { voucherId, payMethod })
       setResult(r)
       setStep('success')
     } catch (e) {
@@ -67,7 +65,7 @@ export default function Booking({ cart, onDone, onBack }) {
     const grandTotal = result.bookings.reduce((s, b) => s + b.total, 0)
     return (
       <div className="page tc" style={{ paddingTop: 48 }}>
-        <div className="success-ball">🏓</div>
+        <div className="success-ball" />
         <h2 className="mt-4" style={{ fontSize: 24 }}>{t('bookingSuccess', lang)}</h2>
         <p className="muted mt-2">{t('bookingRef', lang)}</p>
         <div className="num" style={{ fontSize: 26, letterSpacing: 1 }}>{result.bookings[0].ref}</div>
@@ -81,7 +79,7 @@ export default function Booking({ cart, onDone, onBack }) {
               <div key={b.id} className="row between" style={{ padding: '8px 0', borderBottom: i < result.bookings.length - 1 ? '1px dashed #E3E1D5' : 'none' }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 13.5 }}>{lang === 'th' ? c.nameTh : c.name}</div>
-                  <div className="tiny">{fmtDate(b.date, lang)} · {hourLabel(b.hour)}</div>
+                  <div className="tiny">{fmtDate(b.date, lang)} · {hourRangeLabel(b.hour, b.duration)}</div>
                 </div>
                 <div className="row gap-2" style={{ alignItems: 'center' }}>
                   <b className="num">{b.total === 0 ? t('free', lang) : `฿${b.total}`}</b>
@@ -99,8 +97,9 @@ export default function Booking({ cart, onDone, onBack }) {
             </div>
           )}
         </div>
-        <div className="chip chip-lime mt-4" style={{ fontSize: 14, padding: '6px 16px' }}>
-          +{result.bookings.filter((b) => !b.voucherUsed).length} 🏓 {t('stampEarned', lang)}{result.voucherEarned ? ' → 🎁 Free Voucher!' : ''}
+        <div className="card-flat pad-3 mt-4" style={{ background: '#fff', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
+          <Icon name="ball" size={18} />
+          +{result.bookings.filter((b) => !b.voucherUsed).length} {t('stampEarned', lang)}{result.voucherEarned ? (lang === 'th' ? ' → ได้โค้ดฟรี 1 ชม.!' : ' → Free hour code!') : ''}
         </div>
         <button className="btn btn-pine btn-full btn-lg mt-6" onClick={onDone}>{t('backHome', lang)}</button>
       </div>
@@ -109,46 +108,50 @@ export default function Booking({ cart, onDone, onBack }) {
 
   return (
     <div className="page">
-      <button className="btn btn-ghost btn-sm" onClick={onBack}><Icon name="chevL" size={16} /> {t('back', lang)}</button>
-      <h2 className="mt-3" style={{ fontSize: 21 }}>{t('bookingSummary', lang)}</h2>
+      <h2 style={{ fontSize: 21 }}>{t('bookingSummary', lang)}</h2>
 
       <div className="card-flat pad-4 mt-3">
         {priced.map((it, i) => (
           <div key={`${it.courtId}-${it.hour}`} className="row between" style={{ padding: '7px 0', borderBottom: i < priced.length - 1 ? '1px solid #E3E1D5' : 'none' }}>
             <div>
               <div style={{ fontWeight: 700, fontSize: 13.5 }}>{lang === 'th' ? it.court.nameTh : it.court.name}</div>
-              <div className="tiny">{fmtDate(date, lang)} · {hourLabel(it.hour)} · {it.peak ? t('peak', lang) : t('offPeak', lang)}</div>
+              <div className="tiny">{fmtDate(date, lang)} · {hourRangeLabel(it.hour)} · {it.peak ? t('peak', lang) : t('offPeak', lang)}</div>
             </div>
             <b className="num">฿{it.price}</b>
           </div>
         ))}
       </div>
 
-      {/* promo + voucher */}
+      {/* stamp codes — tap to apply, no typing */}
       <div className="card-flat pad-4 mt-3">
-        <label className="label"><Icon name="tag" size={14} /> {t('promoCode', lang)} ({t('optional', lang)})</label>
-        <div className="row gap-2">
-          <input className="input flex-1" maxLength={24} placeholder={t('promoPlaceholder', lang)} value={promoInput}
-            onChange={(e) => { setPromoInput(e.target.value); setPromoErr(false) }} disabled={!!voucherId} />
-          <button className="btn btn-lime" onClick={applyPromo} disabled={!promoInput || !!voucherId}>{t('apply', lang)}</button>
-        </div>
-        {promo && <div className="chip chip-green mt-2">✓ {promo.code} — {t('promoApplied', lang)}</div>}
-        {promoErr && <div className="chip chip-red mt-2">✕ {t('promoInvalid', lang)}</div>}
-
-        {myVouchers.length > 0 && (
-          <div className="mt-3">
-            <label className="label">🎁 {t('useVoucher', lang)}</label>
-            {voucherBlocked
-              ? <div className="tiny">{!singleItem ? t('voucherSingleOnly', lang) : t('voucherOffPeakOnly', lang)}</div>
-              : (
-                <button className={`btn btn-sm ${voucherId ? 'btn-pine' : ''}`}
-                  onClick={() => { setVoucherId(voucherId ? null : myVouchers[0].id); setPromo(null); setPromoInput('') }}>
-                  {voucherId ? '✓ ' : ''}{t('voucherFreeBooking', lang)} · {t('expires', lang)} {fmtDate(myVouchers[0].expiry, lang)}
-                </button>
-              )}
-            {voucherId && <div className="chip chip-green mt-2">✓ {t('voucherApplied', lang)}</div>}
-          </div>
+        <label className="label"><Icon name="tag" size={14} /> {t('usableCodes', lang)}</label>
+        {myVouchers.length === 0 && (
+          <div className="tiny mt-1">{t('noUsableCodes', lang)}</div>
         )}
+        <div className="col gap-2 mt-2">
+          {myVouchers.map((v) => {
+            const on = voucherId === v.id
+            return (
+              <div key={v.id} className="card-flat pad-3 row gap-2" style={{ alignItems: 'center' }}>
+                <div className="flex-1">
+                  <div style={{ fontWeight: 700, fontSize: 14.5 }}>{t('codeHourOff', lang)}</div>
+                  <div className="tiny">{t('expires', lang)} {fmtDate(v.expiry, lang)}</div>
+                  {voucherBlocked && (
+                    <div className="tiny" style={{ color: 'var(--amber)' }}>
+                      {!singleItem ? t('voucherSingleOnly', lang) : t('voucherOffPeakOnly', lang)}
+                    </div>
+                  )}
+                </div>
+                <button className={`btn btn-sm ${on ? 'btn-pine' : 'btn-lime'}`}
+                  disabled={voucherBlocked && !on}
+                  onClick={() => toggleVoucher(v.id)}>
+                  {on ? `✓ ${t('promoApplied', lang)}` : t('tapUseCode', lang)}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+        {voucherId && <div className="chip chip-green mt-2">✓ {t('voucherApplied', lang)}</div>}
       </div>
 
       {/* totals */}
@@ -174,8 +177,6 @@ export default function Booking({ cart, onDone, onBack }) {
           <div className="col gap-2">
             <PayOpt icon="qr" label={t('payPromptPay', lang)} on={payMethod === 'promptpay'} onClick={() => setPayMethod('promptpay')} />
             <PayOpt icon="card" label={t('payCard', lang)} on={payMethod === 'card'} onClick={() => setPayMethod('card')} />
-            <PayOpt icon="coin" label={`${t('payCredits', lang)}: ฿${user?.credits ?? 0}`} on={payMethod === 'credits'}
-              onClick={() => setPayMethod('credits')} disabled={(user?.credits ?? 0) < total} />
           </div>
         </div>
       )}
@@ -190,7 +191,10 @@ export default function Booking({ cart, onDone, onBack }) {
           <p className="tc tiny mt-2">{t('scanToPay', lang)}</p>
           <div className="qr-box mt-4" />
           <div className="tc num mt-3" style={{ fontSize: 24 }}>฿{total}</div>
-          <p className="tc tiny mt-2" style={{ animation: 'fadeIn 1s infinite alternate' }}>⏳ {t('waitingPayment', lang)}</p>
+          <div className="tc mt-4" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <Logo variant="light" size="md" animate />
+            <p className="tiny mt-3">{t('waitingPayment', lang)}</p>
+          </div>
         </Modal>
       )}
     </div>
@@ -200,7 +204,7 @@ export default function Booking({ cart, onDone, onBack }) {
 const PayOpt = ({ icon, label, on, onClick, disabled }) => (
   <button className="card-flat pad-3 row gap-3" onClick={onClick} disabled={disabled}
     style={{
-      background: on ? 'var(--lime-soft)' : 'var(--paper)', width: '100%',
+      background: on ? 'var(--lime-soft)' : '#fff', width: '100%',
       boxShadow: on ? 'var(--shadow-pop-sm)' : 'none', opacity: disabled ? 0.45 : 1,
       cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'left', fontSize: 14.5, fontWeight: 600,
     }}>

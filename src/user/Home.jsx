@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { todayISO, addDays, isPeak } from '../data/index.js'
-import { hourLabel, Icon, CalendarModal } from '../components/ui.jsx'
+import { Icon, CalendarModal } from '../components/ui.jsx'
 
-export default function Home({ onCheckout }) {
-  const { lang, courts, slotStatus, user, settings } = useStore()
+export default function Home({ onCheckout, cartHost }) {
+  const { lang, courts, slotStatus, settings } = useStore()
   const [date, setDate] = useState(todayISO())
   const [calOpen, setCalOpen] = useState(false)
   const [selected, setSelected] = useState([]) // [{ courtId, hour }]
@@ -32,16 +33,33 @@ export default function Home({ onCheckout }) {
 
   const priceOf = (courtId, hour) => {
     const c = activeCourts.find((x) => x.id === courtId)
-    return isPeak(date, hour) ? c.pricePeak : c.priceOff
+    return isPeak(hour, c) ? c.pricePeak : c.priceOff
   }
   const total = selected.reduce((s, x) => s + priceOf(x.courtId, x.hour), 0)
 
   const checkout = () => onCheckout({ date, items: selected })
 
+  const cartBar = selected.length > 0 && (
+    <div className="cart-bar">
+      <div className="row between" style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div>
+          <div className="tiny" style={{ opacity: 0.85 }}>{t('itemsSelected', lang, { n: selected.length })}</div>
+          <div className="num" style={{ fontSize: 20, color: 'var(--lime)' }}>฿{total}</div>
+        </div>
+        <div className="row gap-2">
+          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--cream)' }} onClick={() => setSelected([])}>
+            {t('clearSelection', lang)}
+          </button>
+          <button className="btn btn-lime" onClick={checkout}>{t('confirmBooking', lang)}</button>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div className="page">
       <div className="hero">
-        <h1>{user ? (lang === 'th' ? `สวัสดี ${user.name.split(' ')[0]}! 🏓` : `Hi ${user.name.split(' ')[0]}! 🏓`) : t('appName', lang)}</h1>
+        <h1>{t('appName', lang)}</h1>
         <p>{t('tagline', lang)}</p>
       </div>
 
@@ -73,7 +91,7 @@ export default function Home({ onCheckout }) {
         <span><i style={{ background: '#EEEEE8' }} />{t('slotBooked', lang)}</span>
       </div>
 
-      <div className="card mt-3" style={{ overflow: 'hidden' }}>
+      <div className="card mt-3">
         <div className="tbl-wrap">
           <table className="avail-table">
             <thead>
@@ -85,10 +103,10 @@ export default function Home({ onCheckout }) {
             <tbody>
               {hours.map((hour) => (
                 <tr key={hour}>
-                  <td className="avail-time num">{hourLabel(hour)}</td>
+                  <td className="avail-time">{String(hour).padStart(2, '0')}:00 - {String(hour + 1).padStart(2, '0')}:00</td>
                   {activeCourts.map((c) => {
                     const st = slotStatus(c, date, hour)
-                    const peak = isPeak(date, hour)
+                    const peak = isPeak(hour, c)
                     const sel = isSelected(c.id, hour)
                     return (
                       <td key={c.id}>
@@ -108,23 +126,8 @@ export default function Home({ onCheckout }) {
         </div>
       </div>
 
-      {selected.length > 0 && (
-        <div className="cart-bar">
-          <div className="row between" style={{ alignItems: 'center' }}>
-            <div>
-              <div className="tiny" style={{ opacity: 0.85 }}>{t('itemsSelected', lang, { n: selected.length })}</div>
-              <div className="num" style={{ fontSize: 20, color: 'var(--lime)' }}>฿{total}</div>
-            </div>
-            <div className="row gap-2">
-              <button className="btn btn-ghost btn-sm" style={{ color: 'var(--cream)' }} onClick={() => setSelected([])}>
-                {t('clearSelection', lang)}
-              </button>
-              <button className="btn btn-lime" onClick={checkout}>{t('confirmBooking', lang)}</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {selected.length > 0 && <div style={{ height: 90 }} />}
+      {cartBar && cartHost && createPortal(cartBar, cartHost)}
+      {selected.length > 0 && <div className="cart-bar-spacer" />}
     </div>
   )
 }

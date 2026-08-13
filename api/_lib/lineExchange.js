@@ -168,7 +168,6 @@ export async function handleLineExchange(req, res) {
         lineUserId: profile.userId,
         stamps: 0,
         bookingsYear: 0,
-        credits: 0,
         suspended: false,
         joined: todayISO(),
         birthday: null,

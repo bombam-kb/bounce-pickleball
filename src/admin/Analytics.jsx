@@ -1,8 +1,8 @@
 import React from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
-import { todayISO, tierOf, TIERS, isPeak } from '../data/index.js'
-import { TierBadge, ChannelChip, hourLabel, useDateRange, DateRangeBar, Icon, downloadCSV } from '../components/ui.jsx'
+import { todayISO, isPeak } from '../data/index.js'
+import { ChannelChip, hourLabel, useDateRange, DateRangeBar, Icon, AvatarGlyph, downloadCSV } from '../components/ui.jsx'
 
 const BarRow = ({ label, value, max, suffix = '', color = 'var(--lime)' }) => (
   <div className="mt-2">
@@ -14,7 +14,7 @@ const BarRow = ({ label, value, max, suffix = '', color = 'var(--lime)' }) => (
 )
 
 export default function Analytics() {
-  const { lang, bookings, courts, members, vouchers, promos, logAdmin } = useStore()
+  const { lang, bookings, courts, members, vouchers, logAdmin } = useStore()
   const th = lang === 'th'
   const T = todayISO()
   const live = bookings.filter((b) => b.status !== 'cancelled')
@@ -35,7 +35,10 @@ export default function Analytics() {
   const maxCourtRev = Math.max(...byCourt.map((x) => x.rev), 1)
 
   // peak vs off-peak
-  const peakRev = inRange.filter((b) => isPeak(b.date, b.hour)).reduce((s, b) => s + b.total, 0)
+  const peakRev = inRange.filter((b) => {
+    const c = courts.find((x) => x.id === b.courtId)
+    return isPeak(b.hour, c)
+  }).reduce((s, b) => s + b.total, 0)
   const offRev = revenueRange - peakRev
 
   // bookings by hour, within the selected range
@@ -47,9 +50,6 @@ export default function Analytics() {
 
   // member stats — tier/channel mix is a lifetime snapshot; top members is scoped to the range
   const active = members.filter((m) => !m.suspended)
-  const byTier = TIERS.map((tier) => ({
-    tier, n: active.filter((m) => tierOf(m.bookingsYear).key === tier.key).length,
-  }))
   const byChannel = ['line', 'email'].map((ch) => ({
     ch, n: active.filter((m) => m.channel === ch).length,
   }))
@@ -63,7 +63,6 @@ export default function Analytics() {
   const vouchersActive = vouchers.filter((v) => !v.used && v.expiry >= T).length
   const vouchersUsed = vouchers.filter((v) => v.used).length
   const vouchersIssuedInRange = vouchers.filter((v) => v.issued >= range.from && v.issued <= range.to).length
-  const promoUses = promos.reduce((s, p) => s + p.used, 0)
 
   const exportCsv = () => {
     const rows = [
@@ -87,10 +86,6 @@ export default function Analytics() {
       [th ? 'ชั่วโมง' : 'Hour', th ? 'จำนวนจอง' : 'Bookings'],
       ...byHour.map(({ h, n }) => [hourLabel(h), n]),
       [],
-      [th ? 'สมาชิกตามระดับ (ยอดรวมปัจจุบัน ไม่ขึ้นกับช่วงวันที่)' : 'Members by tier (lifetime, not range-scoped)'],
-      [th ? 'ระดับ' : 'Tier', th ? 'จำนวน' : 'Count'],
-      ...byTier.map(({ tier, n }) => [tier.name, n]),
-      [],
       [th ? 'สมาชิกตามช่องทาง (ยอดรวมปัจจุบัน)' : 'Members by channel (lifetime)'],
       [th ? 'ช่องทาง' : 'Channel', th ? 'จำนวน' : 'Count'],
       ...byChannel.map(({ ch, n }) => [ch, n]),
@@ -99,11 +94,10 @@ export default function Analytics() {
       [th ? 'อันดับ' : 'Rank', th ? 'ชื่อ' : 'Name', th ? 'จำนวนจอง' : 'Bookings'],
       ...topMembers.map(({ m, n }, i) => [i + 1, m.name, n]),
       [],
-      [th ? 'Loyalty & โปรโมชัน' : 'Loyalty & promos'],
-      [th ? 'Voucher ออกในช่วงนี้' : 'Vouchers issued in range', vouchersIssuedInRange],
-      [th ? 'Voucher ใช้ได้ (รวมทั้งหมด)' : 'Active vouchers (lifetime)', vouchersActive],
-      [th ? 'Voucher ใช้แล้ว (รวมทั้งหมด)' : 'Used vouchers (lifetime)', vouchersUsed],
-      [th ? 'ใช้โค้ดส่วนลด (รวมทั้งหมด)' : 'Promo redemptions (lifetime)', promoUses],
+      [th ? 'โค้ดฟรีจากแสตมป์' : 'Stamp codes'],
+      [th ? 'โค้ดออกในช่วงนี้' : 'Codes issued in range', vouchersIssuedInRange],
+      [th ? 'โค้ดใช้ได้ (รวมทั้งหมด)' : 'Active codes (lifetime)', vouchersActive],
+      [th ? 'โค้ดใช้แล้ว (รวมทั้งหมด)' : 'Used codes (lifetime)', vouchersUsed],
     ]
     downloadCSV('bounce-analytics.csv', rows)
     logAdmin('Export analytics CSV')
@@ -164,11 +158,8 @@ export default function Analytics() {
 
         <div className="col gap-4">
           <div className="card pad-5">
-            <h3 style={{ fontSize: 15 }}>{th ? 'สมาชิกตามระดับ' : 'Members by tier'} ({active.length})</h3>
+            <h3 style={{ fontSize: 15 }}>{th ? 'สมาชิกตามช่องทาง' : 'Members by channel'} ({active.length})</h3>
             <p className="tiny muted">{th ? 'ยอดรวมปัจจุบันทั้งหมด — ไม่ขึ้นกับช่วงวันที่ที่เลือก' : 'Current lifetime totals — not affected by the selected range'}</p>
-            {byTier.map(({ tier, n }) => (
-              <BarRow key={tier.key} label={`${tier.emoji} ${tier.name}`} value={n} max={active.length} suffix={th ? ' คน' : ''} color={tier.color} />
-            ))}
             <div className="row gap-2 mt-3 wrap">
               {byChannel.map(({ ch, n }) => (
                 <span key={ch} className="row gap-1"><ChannelChip channel={ch} /><b className="num tiny">{n}</b></span>
@@ -182,9 +173,8 @@ export default function Analytics() {
               {topMembers.map(({ m, n }, i) => (
                 <div key={m.id} className="row gap-2" style={{ padding: '7px 0', borderBottom: i < topMembers.length - 1 ? '1px solid #E3E1D5' : 'none' }}>
                   <b className="num" style={{ width: 18, color: 'var(--ink-3)' }}>{i + 1}</b>
-                  <span style={{ fontSize: 16 }}>{m.avatar}</span>
+                  <span><AvatarGlyph avatar={m.avatar} size={16} /></span>
                   <span className="flex-1" style={{ fontSize: 13.5, fontWeight: 600 }}>{m.name}</span>
-                  <TierBadge bookingsYear={m.bookingsYear} />
                   <b className="num">{n}</b>
                 </div>
               ))}
@@ -193,12 +183,11 @@ export default function Analytics() {
           </div>
 
           <div className="card pad-5">
-            <h3 style={{ fontSize: 15 }}>🎁 {th ? 'Loyalty & โปรโมชัน' : 'Loyalty & promos'}</h3>
+            <h3 style={{ fontSize: 15 }}>{th ? 'โค้ดฟรีจากแสตมป์' : 'Stamp codes'}</h3>
             <div className="row gap-2 mt-3 wrap">
-              <span className="chip chip-amber">{th ? 'Voucher ออกในช่วงนี้' : 'Issued in range'}: <b className="num">{vouchersIssuedInRange}</b></span>
-              <span className="chip chip-green">{th ? 'Voucher ใช้ได้ (รวม)' : 'Active (lifetime)'}: <b className="num">{vouchersActive}</b></span>
-              <span className="chip chip-grey">{th ? 'Voucher ใช้แล้ว (รวม)' : 'Used (lifetime)'}: <b className="num">{vouchersUsed}</b></span>
-              <span className="chip chip-blue">{th ? 'ใช้โค้ดส่วนลด (รวม)' : 'Promo redemptions (lifetime)'}: <b className="num">{promoUses}</b></span>
+              <span className="chip chip-amber">{th ? 'ออกในช่วงนี้' : 'Issued in range'}: <b className="num">{vouchersIssuedInRange}</b></span>
+              <span className="chip chip-green">{th ? 'ใช้ได้ (รวม)' : 'Active (lifetime)'}: <b className="num">{vouchersActive}</b></span>
+              <span className="chip chip-grey">{th ? 'ใช้แล้ว (รวม)' : 'Used (lifetime)'}: <b className="num">{vouchersUsed}</b></span>
             </div>
           </div>
         </div>

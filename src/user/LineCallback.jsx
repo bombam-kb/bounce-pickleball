@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useStore } from '../store.jsx'
 import { finishLineLogin } from '../lineAuth.js'
+import Logo from '../components/Logo.jsx'
 
 const MSG = {
   th: {
@@ -59,7 +60,7 @@ export default function LineCallback() {
 
   return (
     <div className="page" style={{ paddingTop: 48, textAlign: 'center' }}>
-      <div className="success-ball" style={{ animation: status === 'working' ? undefined : 'none' }}>🏓</div>
+      <Logo variant="light" size="md" animate={status === 'working'} />
       <h2 className="mt-4" style={{ fontSize: 20 }}>
         {status === 'working' && copy.working}
         {status === 'ok' && copy.ok}

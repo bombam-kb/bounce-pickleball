@@ -2,7 +2,7 @@ import React from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { todayISO, addDays } from '../data/index.js'
-import { hourLabel, StatusChip, useDateRange, DateRangeBar, Icon, downloadCSV } from '../components/ui.jsx'
+import { hourLabel, StatusChip, useDateRange, DateRangeBar, Icon, AvatarGlyph, downloadCSV } from '../components/ui.jsx'
 
 const daysBetween = (from, to) => Math.round((new Date(to) - new Date(from)) / 86400000) + 1
 
@@ -132,7 +132,7 @@ export default function Dashboard() {
                 return (
                   <tr key={b.id}>
                     <td className="num">{b.ref}</td>
-                    <td>{m?.avatar} {m?.name}</td>
+                    <td><span className="row gap-1" style={{ alignItems: 'center' }}><AvatarGlyph avatar={m?.avatar} size={16} /> {m?.name}</span></td>
                     <td>{c ? (lang === 'th' ? c.nameTh : c.name) : '—'}</td>
                     <td className="num">{hourLabel(b.hour)}</td>
                     <td className="num">{b.total}</td>

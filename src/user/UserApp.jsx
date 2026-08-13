@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
 import { Icon, Modal } from '../components/ui.jsx'
+import Logo from '../components/Logo.jsx'
 import Home from './Home.jsx'
 import Booking from './Booking.jsx'
 import MyBookings from './MyBookings.jsx'
@@ -10,6 +11,7 @@ import Login from './Login.jsx'
 
 export default function UserApp() {
   const { lang, switchLang, user, notifications, markNotifsRead } = useStore()
+  const [cartHost, setCartHost] = useState(null)
   const [screen, setScreen] = useState('home')   // home | booking | bookings | membership | login
   const [cart, setCart] = useState(null)         // { date, items: [{courtId, hour}] }
   const [afterLogin, setAfterLogin] = useState(null)
@@ -18,6 +20,7 @@ export default function UserApp() {
 
   const goCheckout = (c) => {
     setCart(c)
+    window.scrollTo(0, 0)
     if (!user) { setAfterLogin('booking'); setScreen('login') }
     else setScreen('booking')
   }
@@ -36,13 +39,24 @@ export default function UserApp() {
 
   return (
     <div className="u-shell">
+      {screen !== 'login' && (
       <header className="u-head">
-        <div className="row between">
-          <div className="u-logo">
-            <span style={{ fontSize: 20 }}>🏓</span>
-            <span>BOUNCE<small>PICKLEBALL HOUSE</small></span>
-          </div>
-          <div className="row gap-2">
+        <button type="button" className="u-logo-btn" onClick={() => setScreen('home')} aria-label="Bounce Pickleball House">
+          <Logo variant="light" size="md" />
+        </button>
+        <div className="u-head-tools">
+          {screen === 'booking' ? (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setCart(null); setScreen('home') }}>
+              <Icon name="chevL" size={16} /> {t('back', lang)}
+            </button>
+          ) : user ? (
+            <span className="u-hello">
+              {lang === 'th' ? `สวัสดี ${user.name}` : `Hi ${user.name}`}
+            </span>
+          ) : (
+            <span />
+          )}
+          <div className="u-head-tools-end">
             <div className="lang-toggle">
               <button className={lang === 'th' ? 'on' : ''} onClick={() => switchLang('th')}>TH</button>
               <button className={lang === 'en' ? 'on' : ''} onClick={() => switchLang('en')}>EN</button>
@@ -54,7 +68,7 @@ export default function UserApp() {
                 {unread > 0 && <span className="bell-badge">{unread > 9 ? '9+' : unread}</span>}
               </button>
             )}
-            {!user && screen !== 'login' && (
+            {!user && (
               <button className="btn btn-lime btn-sm" onClick={() => { setAfterLogin('home'); setScreen('login') }}>
                 <Icon name="user" size={14} /> {lang === 'th' ? 'เข้าสู่ระบบ' : 'Log in'}
               </button>
@@ -62,15 +76,19 @@ export default function UserApp() {
           </div>
         </div>
       </header>
+      )}
 
-      {screen === 'home' && <Home onCheckout={goCheckout} />}
+      {screen === 'home' && <Home onCheckout={goCheckout} cartHost={cartHost} />}
       {screen === 'booking' && cart && (
         <Booking cart={cart} onBack={() => setScreen('home')} onDone={() => { setCart(null); setScreen('bookings') }} />
       )}
       {screen === 'bookings' && user && <MyBookings />}
       {screen === 'membership' && user && <Membership />}
       {screen === 'login' && (
-        <Login onDone={() => setScreen(afterLogin && afterLogin !== 'login' ? afterLogin : 'home')} />
+        <Login onDone={() => {
+          window.scrollTo(0, 0)
+          setScreen(afterLogin && afterLogin !== 'login' ? afterLogin : 'home')
+        }} />
       )}
 
       {notifOpen && (
@@ -97,16 +115,19 @@ export default function UserApp() {
         </Modal>
       )}
 
-      <nav className="u-nav">
-        <div className="u-nav-inner">
-          {NAV.map((n) => (
-            <button key={n.key} className={screen === n.key ? 'on' : ''} onClick={() => nav(n.key)}>
-              <span className="nav-dot"><Icon name={n.icon} size={18} /></span>
-              {n.label}
-            </button>
-          ))}
-        </div>
-      </nav>
+      <div className="u-dock">
+        <div className="u-dock-cart" ref={setCartHost} />
+        <nav className="u-nav">
+          <div className="u-nav-inner">
+            {NAV.map((n) => (
+              <button key={n.key} className={screen === n.key ? 'on' : ''} onClick={() => nav(n.key)}>
+                <span className="nav-dot"><Icon name={n.icon} size={18} /></span>
+                {n.label}
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
     </div>
   )
 }

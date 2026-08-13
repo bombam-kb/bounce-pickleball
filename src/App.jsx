@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { StoreProvider } from './store.jsx'
 import { firebaseReady } from './firebase.js'
+import Logo from './components/Logo.jsx'
 
 // code-split: customers never download the admin bundle (and vice versa)
 const UserApp = lazy(() => import('./user/UserApp.jsx'))
@@ -8,9 +9,8 @@ const AdminApp = lazy(() => import('./admin/AdminApp.jsx'))
 const LineCallback = lazy(() => import('./user/LineCallback.jsx'))
 
 const Loading = () => (
-  <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
-    <div style={{ fontSize: 40, animation: 'bounceIn 0.6s ease' }}>🏓</div>
-    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--ink-3)' }}>Bounce…</div>
+  <div className="app-boot">
+    <Logo variant="light" size="xl" animate />
   </div>
 )
 
@@ -57,7 +57,7 @@ export default function App() {
       </Suspense>
       {side === 'user' && !lineCb && (
         <button onClick={() => go('admin')} title="Staff only" style={{
-          position: 'fixed', bottom: 84, right: 12, zIndex: 90,
+          position: 'fixed', bottom: 'calc(var(--u-nav-h) + env(safe-area-inset-bottom, 0px) + 10px)', left: 12, right: 'auto', zIndex: 80,
           border: '2px solid var(--stroke)', borderRadius: 999,
           background: 'var(--pine)', color: 'var(--lime)',
           fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 11,

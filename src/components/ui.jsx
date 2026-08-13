@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { TIERS, tierOf, todayISO, addDays } from '../data/index.js'
+import { todayISO, addDays } from '../data/index.js'
 import { DAY_NAMES, MONTH_NAMES, t } from '../i18n.js'
 
 const PATHS = {
@@ -35,6 +35,13 @@ export const Icon = ({ name, size = 20, stroke = 1.8 }) => (
     style={{ flexShrink: 0 }}>
     {PATHS[name] || PATHS.ball}
   </svg>
+)
+
+/** Ping-pong paddle emoji → pickleball mark. Other avatars stay as-is. */
+export const AvatarGlyph = ({ avatar, size = 18 }) => (
+  !avatar || avatar === '🏓'
+    ? <Icon name="ball" size={size} />
+    : <span style={{ fontSize: size, lineHeight: 1 }}>{avatar}</span>
 )
 
 export const Modal = ({ onClose, children }) => (
@@ -111,29 +118,7 @@ export const CalendarModal = ({ value, onSelect, onClose, minDate, maxDate, adva
   )
 }
 
-// darken a hex color so white text stays readable on it regardless of the
-// surrounding card (light admin tables AND the dark pine membership header)
-const shade = (hex, amt) => {
-  const n = parseInt(hex.slice(1), 16)
-  const r = Math.round(((n >> 16) & 255) * (1 - amt))
-  const g = Math.round(((n >> 8) & 255) * (1 - amt))
-  const b = Math.round((n & 255) * (1 - amt))
-  return `rgb(${r}, ${g}, ${b})`
-}
-
-export const TierBadge = ({ bookingsYear, size = 'md' }) => {
-  const tier = tierOf(bookingsYear)
-  return (
-    <span className="chip" style={{
-      background: shade(tier.color, 0.25), borderColor: 'var(--stroke)', color: '#fff',
-      fontSize: size === 'lg' ? 14 : 12.5,
-    }}>
-      {tier.emoji} {tier.name}
-    </span>
-  )
-}
-
-export const StampCard = ({ stamps }) => (
+export const StampCard = ({ stamps, lang = 'en' }) => (
   <div className="stamp-grid">
     {Array.from({ length: 10 }, (_, i) => {
       const filled = i < stamps
@@ -142,7 +127,9 @@ export const StampCard = ({ stamps }) => (
         <div key={i}
           className={`stamp-cell ${filled ? 'filled' : ''} ${!filled && isFree ? 'freebie' : ''}`}
           style={filled ? { animationDelay: `${i * 0.05}s` } : undefined}>
-          {filled ? '🏓' : isFree ? '🎁' : i + 1}
+          {filled
+            ? <span className="stamp-ball" aria-hidden />
+            : isFree ? <span className="stamp-free">{t('stampFreeHour', lang)}</span> : i + 1}
         </div>
       )
     })}
@@ -178,13 +165,22 @@ export const ChannelChip = ({ channel }) => {
 
 export const hourLabel = (h) => `${String(h).padStart(2, '0')}:00`
 
+/** One booking slot as a range, e.g. 7 → "07:00 - 08:00" */
+export const hourRangeLabel = (h, durationMin = 60) => {
+  const mins = Number(durationMin) > 0 ? Number(durationMin) : 60
+  const end = h * 60 + mins
+  const eh = Math.floor(end / 60)
+  const em = end % 60
+  return `${hourLabel(h)} - ${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`
+}
+
 // ── PDF booking slip — printable window; browsers save via "Save as PDF" ──
 export const printSlip = (b, court, member, lang) => {
   const th = lang === 'th'
   const w = window.open('', '_blank', 'width=420,height=680')
   if (!w) { alert(th ? 'เบราว์เซอร์บล็อกหน้าต่างใหม่ — กรุณาอนุญาต popup' : 'Popup blocked — please allow popups'); return }
-  const hourLbl = `${String(b.hour).padStart(2, '0')}:00`
-  const payLabel = { promptpay: 'QR PromptPay', card: th ? 'บัตรเครดิต/เดบิต' : 'Credit/Debit', credits: 'Credits', voucher: 'Free Voucher', counter: th ? 'จองให้โดยพนักงาน' : 'Booked by staff' }[b.payMethod] || b.payMethod
+  const hourLbl = hourRangeLabel(b.hour, b.duration)
+  const payLabel = { promptpay: 'QR PromptPay', card: th ? 'บัตรเครดิต/เดบิต' : 'Credit/Debit', voucher: th ? 'โค้ดฟรี 1 ชม.' : 'Free hour code', counter: th ? 'จองให้โดยพนักงาน' : 'Booked by staff' }[b.payMethod] || b.payMethod
   w.document.write(`<!doctype html><html lang="${lang}"><head><meta charset="utf-8">
 <title>${b.ref} — Bounce Pickleball House</title>
 <style>
@@ -192,8 +188,9 @@ export const printSlip = (b, court, member, lang) => {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Anuphan', Tahoma, sans-serif; color: #101B14; padding: 24px; background: #fff; }
   .slip { max-width: 360px; margin: 0 auto; border: 2px solid #101B14; border-radius: 16px; overflow: hidden; }
-  .head { background: #16382B; color: #C6F135; text-align: center; padding: 18px 16px 14px; font-family: 'Prompt', Tahoma, sans-serif; }
-  .head h1 { font-size: 18px; letter-spacing: 1px; }
+  .head { background: #3B4D27; color: #C6F135; text-align: center; padding: 18px 16px 14px; font-family: 'Prompt', Tahoma, sans-serif; }
+  .head h1 { font-size: 18px; letter-spacing: 1px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .head h1 svg { flex-shrink: 0; }
   .head small { color: #F7F4EA; font-size: 10px; letter-spacing: 3px; }
   .ref { text-align: center; padding: 14px; border-bottom: 2px dashed #B9B4A2; }
   .ref .label { font-size: 11px; color: #8A968E; }
@@ -209,7 +206,7 @@ export const printSlip = (b, court, member, lang) => {
   .noprint { display: block; margin: 16px auto 0; padding: 10px 24px; font-family: 'Prompt', Tahoma, sans-serif; font-weight: 700; border: 2px solid #101B14; border-radius: 999px; background: #C6F135; cursor: pointer; }
 </style></head><body>
 <div class="slip">
-  <div class="head"><h1>🏓 BOUNCE</h1><small>PICKLEBALL HOUSE</small></div>
+  <div class="head"><h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C6F135" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="9.5" r="1.2" fill="#C6F135" stroke="none"/><circle cx="14.5" cy="8.5" r="1.2" fill="#C6F135" stroke="none"/><circle cx="12" cy="13.5" r="1.2" fill="#C6F135" stroke="none"/><circle cx="15.5" cy="14.5" r="1.2" fill="#C6F135" stroke="none"/><circle cx="8.5" cy="15" r="1.2" fill="#C6F135" stroke="none"/></svg> BOUNCE</h1><small>PICKLEBALL HOUSE</small></div>
   <div class="ref"><div class="label">${th ? 'หมายเลขการจอง' : 'Booking Reference'}</div><div class="code">${b.ref}</div></div>
   <div class="rows">
     <div class="row"><span class="k">${th ? 'ผู้จอง' : 'Customer'}</span><span class="v">${member?.name ?? '—'}</span></div>

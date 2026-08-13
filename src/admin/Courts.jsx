@@ -6,7 +6,7 @@ import { Icon, Modal, Toggle, hourLabel } from '../components/ui.jsx'
 
 const PHOTOS = [
   'linear-gradient(135deg,#2456D6 0%,#173B9E 60%,#102A73 100%)',
-  'linear-gradient(135deg,#1E7A4C 0%,#16382B 70%)',
+  'linear-gradient(135deg,#1E7A4C 0%,#3B4D27 70%)',
   'linear-gradient(135deg,#E8743B 0%,#B33A2B 60%,#6E1F33 100%)',
   'linear-gradient(135deg,#7A4CC9 0%,#3D2373 70%)',
 ]
@@ -14,6 +14,7 @@ const PHOTOS = [
 const EMPTY = {
   name: '', nameTh: '', desc: '', descTh: '', maxPlayers: 4,
   priceOff: 200, pricePeak: 320, open: 9, close: 21,
+  peakEnabled: true, peakFrom: 17, peakTo: 21,
   openCourt: false, active: true, photo: PHOTOS[3], blocked: [],
 }
 
@@ -67,7 +68,9 @@ export default function Courts() {
             <div className="pad-4">
               <div className="row wrap gap-2">
                 <span className="chip chip-lime">{t('offPeak', lang)} ฿{c.priceOff}</span>
-                <span className="chip chip-amber">{t('peak', lang)} ฿{c.pricePeak}</span>
+                {c.peakEnabled !== false
+                  ? <span className="chip chip-amber">{t('peak', lang)} {hourLabel(c.peakFrom ?? 17)}–{hourLabel(c.peakTo ?? 21)} ฿{c.pricePeak}</span>
+                  : <span className="chip chip-grey">{t('peakOff', lang)}</span>}
                 <span className="chip chip-grey">{hourLabel(c.open)}–{hourLabel(c.close)}</span>
                 <span className="chip chip-grey">{t('maxPlayers', lang)} {c.maxPlayers}</span>
                 {c.openCourt && <span className="chip chip-blue">Open Court</span>}
@@ -85,7 +88,7 @@ export default function Courts() {
               )}
               <div className="act-row">
                 <span className="act-label">{lang === 'th' ? 'จัดการ' : 'Actions'}</span>
-                <button className="btn btn-sm" onClick={() => setEditing({ ...c })}>
+                <button className="btn btn-sm" onClick={() => setEditing({ peakEnabled: true, peakFrom: 17, peakTo: 21, ...c })}>
                   <Icon name="pencil" size={14} /> {t('edit', lang)}
                 </button>
                 <button className="btn btn-sm" onClick={() => { setBlocking(c); setBlockForm({ date: todayISO(), hour: 12, reason: '' }) }}>
@@ -116,6 +119,30 @@ export default function Courts() {
               <div className="flex-1"><label className="label">{t('pricePeak', lang)}</label>
                 <input className="input" type="number" min="0" max="99999" value={editing.pricePeak} onChange={(e) => set('pricePeak', Math.max(0, +e.target.value || 0))} /></div>
             </div>
+            <div className="row between">
+              <span className="label" style={{ margin: 0 }}>{t('peakHours', lang)}</span>
+              <div className="row gap-2" style={{ alignItems: 'center' }}>
+                <span className="tiny">{editing.peakEnabled ? t('active', lang) : t('inactive', lang)}</span>
+                <Toggle checked={!!editing.peakEnabled} onChange={(v) => set('peakEnabled', v)} />
+              </div>
+            </div>
+            {editing.peakEnabled ? (
+              <div className="row gap-3">
+                <div className="flex-1"><label className="label">{t('peakFrom', lang)}</label>
+                  <select className="select" value={editing.peakFrom} onChange={(e) => set('peakFrom', +e.target.value)}>
+                    {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
+                  </select></div>
+                <div className="flex-1"><label className="label">{t('peakTo', lang)}</label>
+                  <select className="select" value={editing.peakTo} onChange={(e) => set('peakTo', +e.target.value)}>
+                    {Array.from({ length: 24 }, (_, i) => {
+                      const h = i + 1
+                      return <option key={h} value={h}>{hourLabel(h)}</option>
+                    })}
+                  </select></div>
+              </div>
+            ) : (
+              <p className="tiny" style={{ color: 'var(--amber)' }}>{t('peakOffNote', lang)}</p>
+            )}
             <div className="row gap-3">
               <div className="flex-1"><label className="label">{t('openTime', lang)}</label>
                 <select className="select" value={editing.open} onChange={(e) => set('open', +e.target.value)}>

@@ -3,6 +3,7 @@ import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
 import { Icon } from '../components/ui.jsx'
 import { startLineLogin, lineLoginConfigured } from '../lineAuth.js'
+import Logo from '../components/Logo.jsx'
 
 const LineLogo = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
@@ -46,7 +47,7 @@ const CheckMail = ({ title, body, email }) => (
 )
 
 export default function Login({ onDone }) {
-  const { lang, registerEmail, loginEmail, requestReset, resendVerification } = useStore()
+  const { lang, switchLang, registerEmail, loginEmail, requestReset, resendVerification } = useStore()
   const [mode, setMode] = useState('menu') // menu | elogin | eregister | echeck | ereset | eresetsent
   const [f, setF] = useState({ name: '', email: '', pass: '', pass2: '' })
   const [err, setErr] = useState(null)
@@ -99,9 +100,14 @@ export default function Login({ onDone }) {
   return (
     <div className="page" style={{ paddingTop: 28 }}>
       <div className="tc">
-        <div className="success-ball" style={{ animation: 'none' }}>🏓</div>
+        <Logo variant="light" size="md" />
+        <div className="row center mt-4">
+          <div className="lang-toggle">
+            <button className={lang === 'th' ? 'on' : ''} onClick={() => switchLang('th')}>TH</button>
+            <button className={lang === 'en' ? 'on' : ''} onClick={() => switchLang('en')}>EN</button>
+          </div>
+        </div>
         <h2 className="mt-4" style={{ fontSize: 22 }}>{t('loginTitle', lang)}</h2>
-        <p className="tiny mt-2">{t('appName', lang)}</p>
       </div>
 
       {mode === 'menu' && (

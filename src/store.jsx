@@ -10,8 +10,8 @@ import {
 } from 'firebase/firestore'
 import { auth, db, firebaseReady } from './firebase.js'
 import {
-  COURTS, MEMBERS, SEED_BOOKINGS, SEED_PROMOS, SEED_VOUCHERS,
-  SEED_STAMP_LOG, SEED_SETTINGS, genRef, todayISO, addDays, isPeak, nowLocalISO, tierOf,
+  COURTS, MEMBERS, SEED_BOOKINGS, SEED_VOUCHERS,
+  SEED_STAMP_LOG, SEED_SETTINGS, genRef, todayISO, addDays, isPeak, nowLocalISO,
 } from './data/index.js'
 
 const Ctx = createContext(null)
@@ -41,7 +41,7 @@ const mapAuthError = (e) => {
 // ── one-time seed: if the database is empty, push the demo dataset ──────────
 const SEED_COLLECTIONS = {
   courts: COURTS, members: MEMBERS, bookings: SEED_BOOKINGS,
-  promos: SEED_PROMOS, vouchers: SEED_VOUCHERS, stampLog: SEED_STAMP_LOG,
+  vouchers: SEED_VOUCHERS, stampLog: SEED_STAMP_LOG,
 }
 async function seedIfEmpty() {
   const snap = await getDocs(collection(db, 'courts'))
@@ -61,7 +61,6 @@ export function StoreProvider({ children }) {
   const [courts, setCourts] = useState([])
   const [members, setMembers] = useState([])
   const [bookings, setBookings] = useState([])
-  const [promos, setPromos] = useState([])
   const [vouchers, setVouchers] = useState([])
   const [stampLog, setStampLog] = useState([])
   const [settings, setSettingsState] = useState(SEED_SETTINGS)
@@ -83,7 +82,7 @@ export function StoreProvider({ children }) {
   }
   const errLog = (name) => (e) => console.error(`[Bounce] ${name} listener`, e)
 
-  // ── public catalog (courts, promos, settings): readable without auth, so
+  // ── public catalog (courts, settings): readable without auth, so
   //    subscribe once on mount. Also runs the one-time seed check. ──
   useEffect(() => {
     if (!firebaseReady) { setAuthReady(true); return }
@@ -94,9 +93,8 @@ export function StoreProvider({ children }) {
       if (cancelled) return
       unsubs.push(onSnapshot(collection(db, 'courts'),
         (s) => setCourts(rowsOf(s, (a, b) => (a.id < b.id ? -1 : 1))), errLog('courts')))
-      unsubs.push(onSnapshot(collection(db, 'promos'), (s) => setPromos(rowsOf(s)), errLog('promos')))
       unsubs.push(onSnapshot(doc(db, 'config', 'settings'),
-        (d) => { if (d.exists()) setSettingsState(d.data()) }, errLog('settings')))
+        (d) => { if (d.exists()) setSettingsState({ ...SEED_SETTINGS, ...d.data() }) }, errLog('settings')))
     })()
     return () => { cancelled = true; unsubs.forEach((u) => u && u()) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -160,7 +158,7 @@ export function StoreProvider({ children }) {
     return unsub
   }, [])
 
-  // keep the logged-in user's stamps/credits/etc. live as members updates
+  // keep the logged-in user's stamps/bookings live as members updates
   useEffect(() => {
     if (!user) return
     const fresh = members.find((m) => m.id === user.id)
@@ -247,7 +245,7 @@ export function StoreProvider({ children }) {
       const member = {
         name: name.trim(), email: em, phone: '', channel: 'email',
         country: lang === 'th' ? 'TH' : '—', lang, avatar: '🏓',
-        stamps: 0, bookingsYear: 0, credits: 0, suspended: false,
+        stamps: 0, bookingsYear: 0, suspended: false,
         joined: todayISO(), birthday: null,
       }
       await setDoc(doc(db, 'members', cred.user.uid), member)
@@ -338,19 +336,18 @@ export function StoreProvider({ children }) {
   }, [members, settings.voucherDays])
 
   // ── multi-slot checkout — one payment, one booking record per selected cell.
-  // All writes (bookings, voucher/promo usage, stamps, earned vouchers) go in a
+  // All writes (bookings, stamp-code usage, stamps, earned codes) go in a
   // single Firestore batch so the stamp math is computed exactly once (no race
   // between per-booking snapshot reads).
-  const createMultiBooking = useCallback(async (items, { promo, voucherId, payMethod }) => {
+  const createMultiBooking = useCallback(async (items, { voucherId, payMethod }) => {
     const priced = items.map((it) => {
       const court = courts.find((c) => c.id === it.courtId)
-      const base = isPeak(it.date, it.hour) ? court.pricePeak : court.priceOff
+      const base = isPeak(it.hour, court) ? court.pricePeak : court.priceOff
       return { ...it, base }
     })
     const subtotal = priced.reduce((s, x) => s + x.base, 0)
     let totalDiscount = 0
     if (voucherId && priced.length === 1) totalDiscount = priced[0].base
-    else if (promo) totalDiscount = promo.type === 'fixed' ? Math.min(promo.value, subtotal) : Math.round(subtotal * promo.value / 100)
 
     const createdAt = nowLocalISO()
     const ref = genRef()          // one reference for the whole booking session
@@ -371,7 +368,6 @@ export function StoreProvider({ children }) {
     const batch = writeBatch(db)
     newBookings.forEach((b) => batch.set(doc(db, 'bookings', b.id), stripId(b)))
     if (voucherId) batch.update(doc(db, 'vouchers', voucherId), { used: true })
-    if (promo) batch.update(doc(db, 'promos', promo.id), { used: promo.used + 1 })
 
     // one stamp per booking not covered by a voucher redemption.
     // use the live `user` (always present when booking) as the stamp source so
@@ -408,7 +404,7 @@ export function StoreProvider({ children }) {
         lang === 'th' ? 'สะสมแสตมป์ครบ 10 ดวงแล้ว' : 'You collected 10 stamps')
     }
     return { bookings: newBookings, voucherEarned }
-  }, [courts, user, notify, lang, settings.voucherDays])
+  }, [courts, user, notify, lang, settings])
 
   const cancelBooking = useCallback(async (bookingId, by = 'user') => {
     const bk = bookings.find((b) => b.id === bookingId)
@@ -421,31 +417,6 @@ export function StoreProvider({ children }) {
         ? (lang === 'th' ? 'Voucher ที่ใช้ไปจะไม่ถูกคืน' : 'The voucher used is not refunded')
         : (lang === 'th' ? 'แสตมป์จากการจองนี้ถูกหักคืนแล้ว' : 'The stamp from this booking was refunded'))
   }, [bookings, addStamp, notify, lang])
-
-  // ── Birthday Promo — Gold member gets a free voucher on their birthday ──
-  useEffect(() => {
-    if (!firebaseReady || !user?.birthday || user.suspended) return
-    const today = todayISO()
-    if (user.birthday.slice(5) !== today.slice(5)) return
-    if (tierOf(user.bookingsYear).key !== 'gold') return
-    const already = vouchers.some((v) =>
-      v.userId === user.id && v.source === 'birthday' && v.issued.slice(0, 4) === today.slice(0, 4))
-    if (already) return
-    setDoc(doc(db, 'vouchers', nid('v')), {
-      userId: user.id, issued: today,
-      expiry: addDays(today, settings.voucherDays), used: false, source: 'birthday',
-    }).catch((e) => console.error('[Bounce] birthday voucher', e))
-    notify(
-      lang === 'th' ? '🎂 สุขสันต์วันเกิด!' : '🎂 Happy Birthday!',
-      lang === 'th' ? 'สิทธิ์ Gold Member — รับ Free Booking 1 ครั้งเป็นของขวัญ' : 'Gold perk — enjoy 1 free booking on us')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id])
-
-  const validatePromo = useCallback((code) => {
-    const p = promos.find((x) => x.code.toLowerCase() === code.trim().toLowerCase())
-    if (!p || !p.active || p.used >= p.limit || p.expiry < todayISO()) return null
-    return p
-  }, [promos])
 
   const logAdmin = useCallback(async (action) => {
     if (!firebaseReady) return
@@ -462,12 +433,6 @@ export function StoreProvider({ children }) {
   }, [])
   const deleteCourt = useCallback(async (id) => { await deleteDoc(doc(db, 'courts', id)) }, [])
   const updateCourt = useCallback(async (id, patch) => { await updateDoc(doc(db, 'courts', id), patch) }, [])
-
-  const savePromo = useCallback(async (promo) => {
-    const id = promo.id || ('p' + Date.now())
-    await setDoc(doc(db, 'promos', id), stripId({ ...promo, id }))
-  }, [])
-  const updatePromo = useCallback(async (id, patch) => { await updateDoc(doc(db, 'promos', id), patch) }, [])
 
   const updateMember = useCallback(async (id, patch) => { await updateDoc(doc(db, 'members', id), patch) }, [])
 
@@ -489,7 +454,7 @@ export function StoreProvider({ children }) {
     const ref = genRef()          // one reference for the whole booking session
     const newBookings = items.map((it) => {
       const court = courts.find((c) => c.id === it.courtId)
-      const base = (isPeak(it.date, it.hour) ? court.pricePeak : court.priceOff) * (duration / 60)
+      const base = (isPeak(it.hour, court) ? court.pricePeak : court.priceOff) * (duration / 60)
       return {
         id: nid('b'), ref, userId: uid, courtId: it.courtId, date: it.date, hour: it.hour, duration,
         price: base, discount: 0, total: base, payMethod: 'counter',
@@ -509,7 +474,7 @@ export function StoreProvider({ children }) {
       batch.set(doc(db, 'members', uid), {
         name: guest.name.trim(), email: '', phone: (guest.phone || '').trim(),
         channel: 'guest', country: '—', lang, avatar: '🎾',
-        stamps, bookingsYear, credits: 0, suspended: false,
+        stamps, bookingsYear, suspended: false,
         joined: todayISO(), birthday: null,
       })
     } else if (existing) {
@@ -529,30 +494,23 @@ export function StoreProvider({ children }) {
     const who = existing?.name ?? guest?.name ?? uid
     await logAdmin(`Booked ${newBookings.length} slot(s) for ${who}${guest && !userId ? ' (guest)' : ''} — ${lang === 'th' ? 'จองให้ลูกค้า (โทร/walk-in)' : 'manual booking (phone/walk-in)'}`)
     return newBookings
-  }, [courts, members, settings.voucherDays, logAdmin, lang])
+  }, [courts, members, settings, logAdmin, lang])
 
   const adminAdjustStamps = useCallback(async (userId, delta, reason) => {
     await addStamp(userId, `Admin adjust: ${reason}`, delta, 'admin')
     await logAdmin(`Adjust stamps ${delta > 0 ? '+' : ''}${delta} for ${userId} — ${reason}`)
   }, [addStamp, logAdmin])
 
-  const adminIssueVoucher = useCallback(async (userId, reason) => {
-    await setDoc(doc(db, 'vouchers', nid('v')), {
-      userId, issued: todayISO(), expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'manual',
-    })
-    await logAdmin(`Issue voucher to ${userId} — ${reason}`)
-  }, [settings.voucherDays, logAdmin])
-
   const value = {
     lang, switchLang, firebaseReady, authReady,
-    courts, members, bookings, promos, vouchers, stampLog, settings, adminLog,
-    saveCourt, deleteCourt, updateCourt, savePromo, updatePromo, updateMember, saveSettings,
+    courts, members, bookings, vouchers, stampLog, settings, adminLog,
+    saveCourt, deleteCourt, updateCourt, updateMember, saveSettings,
     logAdmin,
     user, completeLineLogin, logout, isAdmin, adminLogin, adminLogout, resetDemo,
     registerEmail, loginEmail, requestReset, resendVerification,
     notifications, notify, markNotifsRead,
-    slotStatus, createMultiBooking, cancelBooking, validatePromo,
-    adminAdjustStamps, adminIssueVoucher, adminCreateMultiBooking,
+    slotStatus, createMultiBooking, cancelBooking,
+    adminAdjustStamps, adminCreateMultiBooking,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

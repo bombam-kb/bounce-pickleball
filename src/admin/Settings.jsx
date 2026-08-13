@@ -8,7 +8,6 @@ export default function Settings() {
   const [saved, setSaved] = useState(false)
   const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setSaved(false) }
 
-  // settings arrive asynchronously from Firestore — sync the form once loaded
   useEffect(() => { setForm(settings) }, [settings])
 
   const save = () => {
