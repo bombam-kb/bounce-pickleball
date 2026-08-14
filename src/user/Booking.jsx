@@ -146,7 +146,6 @@ export default function Booking({ cart, onDone, onBack }) {
                 <div className="flex-1">
                   <div style={{ fontWeight: 700, fontSize: 14.5 }}>{t('codeHourOff', lang)}</div>
                   <div className="tiny">{t('codeNoExpiry', lang)}</div>
-                  <div className="tiny">{t('voucherCheapest', lang)}</div>
                 </div>
                 <button className={`btn btn-sm ${on ? 'btn-pine' : 'btn-lime'}`}
                   onClick={() => toggleVoucher(v.id)}>

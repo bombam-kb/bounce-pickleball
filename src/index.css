@@ -495,7 +495,7 @@ a { color: inherit; }
   padding: 12px 14px; box-shadow: var(--shadow-pop);
   animation: slideUp 0.2s ease;
 }
-.cart-bar-spacer { height: 96px; }
+.cart-bar-spacer { height: 156px; }
 
 /* stamp card */
 .stamp-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
