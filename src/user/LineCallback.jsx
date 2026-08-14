@@ -59,7 +59,7 @@ export default function LineCallback() {
   }, [completeLineLogin])
 
   return (
-    <div className="page" style={{ paddingTop: 48, textAlign: 'center' }}>
+    <div className="page" style={{ paddingTop: 48, textAlign: 'center', minHeight: '100dvh', background: '#fff' }}>
       <Logo variant="light" size="md" animate={status === 'working'} />
       <h2 className="mt-4" style={{ fontSize: 20 }}>
         {status === 'working' && copy.working}

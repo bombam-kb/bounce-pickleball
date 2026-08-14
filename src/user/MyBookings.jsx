@@ -16,7 +16,11 @@ export default function MyBookings() {
       return { ...b, status: b.status === 'upcoming' && past ? 'completed' : b.status }
     })
     .filter((b) => b.status === tab)
-    .sort((a, b) => (tab === 'upcoming' ? 1 : -1) * ((a.date + a.hour) < (b.date + b.hour) ? -1 : 1))
+    .sort((a, b) => {
+      const ka = `${a.date}-${String(a.hour).padStart(2, '0')}`
+      const kb = `${b.date}-${String(b.hour).padStart(2, '0')}`
+      return (tab === 'upcoming' ? 1 : -1) * (ka < kb ? -1 : ka > kb ? 1 : 0)
+    })
 
   const pager = usePager(mine, 5)
 

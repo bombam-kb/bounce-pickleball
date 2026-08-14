@@ -17,8 +17,8 @@ export default function Home({ onCheckout, cartHost }) {
   useEffect(() => { setSelected([]) }, [date])
 
   const activeCourts = courts.filter((c) => c.active)
-  const openHour = Math.min(...activeCourts.map((c) => c.open))
-  const closeHour = Math.max(...activeCourts.map((c) => c.close))
+  const openHour = activeCourts.length ? Math.min(...activeCourts.map((c) => c.open)) : 0
+  const closeHour = activeCourts.length ? Math.max(...activeCourts.map((c) => c.close)) : 0
   const hours = Array.from({ length: Math.max(0, closeHour - openHour) }, (_, i) => openHour + i)
 
   const isSelected = (courtId, hour) => selected.some((s) => s.courtId === courtId && s.hour === hour)
@@ -58,12 +58,7 @@ export default function Home({ onCheckout, cartHost }) {
 
   return (
     <div className="page">
-      <div className="hero">
-        <h1>{t('appName', lang)}</h1>
-        <p>{t('tagline', lang)}</p>
-      </div>
-
-      <h3 className="mt-6" style={{ fontSize: 16 }}>{t('pickDate', lang)}</h3>
+      <h3 style={{ fontSize: 16 }}>{t('pickDate', lang)}</h3>
       <button className="date-trigger mt-2" onClick={() => setCalOpen(true)}>
         <Icon name="calendar" size={20} />
         <span className="flex-1">

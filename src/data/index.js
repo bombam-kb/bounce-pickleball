@@ -132,8 +132,8 @@ export const SEED_BOOKINGS = [
 ]
 
 export const SEED_VOUCHERS = [
-  { id: 'v1', userId: 'u3', issued: addDays(T, -20), expiry: addDays(T, 70), used: false, source: 'stamps' },
-  { id: 'v3', userId: 'u1', issued: addDays(T, -100), expiry: addDays(T, -10), used: true, source: 'stamps' },
+  { id: 'v1', userId: 'u3', issued: addDays(T, -20), expiry: null, used: false, source: 'stamps' },
+  { id: 'v3', userId: 'u1', issued: addDays(T, -100), expiry: null, used: true, source: 'stamps' },
 ]
 
 export const SEED_STAMP_LOG = [

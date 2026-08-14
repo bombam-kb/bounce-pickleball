@@ -46,7 +46,7 @@ export default function Courts() {
   const unblock = (courtId, i) => {
     const c = courts.find((x) => x.id === courtId)
     if (!c) return
-    updateCourt(courtId, { blocked: c.blocked.filter((_, j) => j !== i) })
+    updateCourt(courtId, { blocked: (c.blocked || []).filter((_, j) => j !== i) })
   }
   const set = (k, v) => setEditing((e) => ({ ...e, [k]: v }))
 
@@ -76,7 +76,7 @@ export default function Courts() {
                 {c.openCourt && <span className="chip chip-blue">Open Court</span>}
                 {!c.active && <span className="chip chip-red">{t('inactive', lang)}</span>}
               </div>
-              {c.blocked.length > 0 && (
+              {c.blocked?.length > 0 && (
                 <div className="row wrap gap-2 mt-2">
                   {c.blocked.map((b, i) => (
                     <span key={i} className="chip chip-red">

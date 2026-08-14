@@ -53,7 +53,9 @@ function BookForCustomerModal({ onClose }) {
       setSuccess(bookings)
     } catch (e) {
       console.error('[Bounce] admin booking failed', e)
-      alert(th ? 'จองไม่สำเร็จ ลองใหม่อีกครั้ง' : 'Booking failed — please try again')
+      alert(e?.message === 'slot_taken'
+        ? t('slotTaken', lang)
+        : (th ? 'จองไม่สำเร็จ ลองใหม่อีกครั้ง' : 'Booking failed — please try again'))
     }
     setBusy(false)
   }
@@ -63,7 +65,7 @@ function BookForCustomerModal({ onClose }) {
     return (
       <Modal onClose={onClose}>
         <div className="tc" style={{ paddingTop: 8 }}>
-          <div className="success-ball" style={{ width: 60, height: 60 }} />
+          <img src="/ball.png" className="success-ball" alt="" style={{ width: 60, height: 60 }} />
           <h3 className="mt-3" style={{ fontSize: 17 }}>{t('bookForSuccess', lang)}</h3>
           <div className="num mt-1" style={{ fontSize: 20 }}>{success[0].ref}</div>
           <p className="muted mt-1">{success.length} {th ? 'ช่องเวลา' : 'slot(s)'}</p>

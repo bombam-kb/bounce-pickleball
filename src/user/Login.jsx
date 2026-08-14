@@ -98,7 +98,7 @@ export default function Login({ onDone }) {
   )
 
   return (
-    <div className="page" style={{ paddingTop: 28 }}>
+    <div className="page" style={{ paddingTop: 28, minHeight: '100dvh', background: '#fff' }}>
       <div className="tc">
         <Logo variant="light" size="md" />
         <div className="row center mt-4">

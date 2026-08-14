@@ -60,7 +60,7 @@ export default function Analytics() {
     .filter((x) => x.n > 0)
     .sort((a, b) => b.n - a.n)
     .slice(0, 5)
-  const vouchersActive = vouchers.filter((v) => !v.used && v.expiry >= T).length
+  const vouchersActive = vouchers.filter((v) => !v.used).length
   const vouchersUsed = vouchers.filter((v) => v.used).length
   const vouchersIssuedInRange = vouchers.filter((v) => v.issued >= range.from && v.issued <= range.to).length
 

@@ -3,7 +3,6 @@ import { todayISO, addDays } from '../data/index.js'
 import { DAY_NAMES, MONTH_NAMES, t } from '../i18n.js'
 
 const PATHS = {
-  ball: <><circle cx="12" cy="12" r="9" /><circle cx="9" cy="9.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="14.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="13.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="15.5" cy="14.5" r="1.2" fill="currentColor" stroke="none" /><circle cx="8.5" cy="15" r="1.2" fill="currentColor" stroke="none" /></>,
   calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></>,
   ticket: <><path d="M3 9V7a2 2 0 012-2h14a2 2 0 012 2v2a3 3 0 000 6v2a2 2 0 01-2 2H5a2 2 0 01-2-2v-2a3 3 0 000-6z" /><path d="M13 5v14" strokeDasharray="2.5 3" /></>,
   user: <><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6" /></>,
@@ -29,13 +28,34 @@ const PATHS = {
   coin: <><circle cx="12" cy="12" r="8.5" /><path d="M12 8v8M9.5 10c0-1 1-1.8 2.5-1.8s2.5.7 2.5 1.7c0 2.3-5 1.9-5 4.1 0 1 1 1.8 2.5 1.8s2.5-.8 2.5-1.8" /></>,
 }
 
-export const Icon = ({ name, size = 20, stroke = 1.8 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round"
-    style={{ flexShrink: 0 }}>
-    {PATHS[name] || PATHS.ball}
-  </svg>
+export const BallImg = ({ size, className = '', style }) => (
+  <img
+    src="/ball.png"
+    alt=""
+    width={size || 20}
+    height={size || 20}
+    className={className}
+    draggable="false"
+    style={{
+      ...(size ? { width: size, height: size } : null),
+      objectFit: 'contain',
+      flexShrink: 0,
+      display: 'block',
+      ...style,
+    }}
+  />
 )
+
+export const Icon = ({ name, size = 20, stroke = 1.8 }) => {
+  if (name === 'ball' || !PATHS[name]) return <BallImg size={size} />
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round"
+      style={{ flexShrink: 0 }}>
+      {PATHS[name]}
+    </svg>
+  )
+}
 
 /** Ping-pong paddle emoji → pickleball mark. Other avatars stay as-is. */
 export const AvatarGlyph = ({ avatar, size = 18 }) => (
@@ -128,7 +148,7 @@ export const StampCard = ({ stamps, lang = 'en' }) => (
           className={`stamp-cell ${filled ? 'filled' : ''} ${!filled && isFree ? 'freebie' : ''}`}
           style={filled ? { animationDelay: `${i * 0.05}s` } : undefined}>
           {filled
-            ? <span className="stamp-ball" aria-hidden />
+            ? <BallImg className="stamp-ball" />
             : isFree ? <span className="stamp-free">{t('stampFreeHour', lang)}</span> : i + 1}
         </div>
       )
@@ -206,7 +226,7 @@ export const printSlip = (b, court, member, lang) => {
   .noprint { display: block; margin: 16px auto 0; padding: 10px 24px; font-family: 'Prompt', Tahoma, sans-serif; font-weight: 700; border: 2px solid #101B14; border-radius: 999px; background: #C6F135; cursor: pointer; }
 </style></head><body>
 <div class="slip">
-  <div class="head"><h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C6F135" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="9.5" r="1.2" fill="#C6F135" stroke="none"/><circle cx="14.5" cy="8.5" r="1.2" fill="#C6F135" stroke="none"/><circle cx="12" cy="13.5" r="1.2" fill="#C6F135" stroke="none"/><circle cx="15.5" cy="14.5" r="1.2" fill="#C6F135" stroke="none"/><circle cx="8.5" cy="15" r="1.2" fill="#C6F135" stroke="none"/></svg> BOUNCE</h1><small>PICKLEBALL HOUSE</small></div>
+  <div class="head"><h1><img src="${window.location.origin}/ball.png" width="22" height="22" alt="" /> BOUNCE</h1><small>PICKLEBALL HOUSE</small></div>
   <div class="ref"><div class="label">${th ? 'หมายเลขการจอง' : 'Booking Reference'}</div><div class="code">${b.ref}</div></div>
   <div class="rows">
     <div class="row"><span class="k">${th ? 'ผู้จอง' : 'Customer'}</span><span class="v">${member?.name ?? '—'}</span></div>

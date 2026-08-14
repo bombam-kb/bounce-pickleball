@@ -46,7 +46,7 @@ export const DICT = {
   itemsSelected: { th: '{n} รายการที่เลือก', en: '{n} selected' },
   clearSelection: { th: 'ล้างที่เลือก', en: 'Clear' },
   removeItem: { th: 'นำออก', en: 'Remove' },
-  voucherSingleOnly: { th: 'ใช้ Voucher ได้เมื่อเลือกจอง 1 รายการเท่านั้น', en: 'Voucher can only be used with a single booking' },
+  voucherCheapest: { th: 'ลดฟรี 1 ชม. ที่รายการถูกที่สุด', en: '1 free hour on the cheapest slot' },
 
   // Booking flow
   bookingSummary: { th: 'สรุปการจอง', en: 'Booking Summary' },
@@ -64,8 +64,9 @@ export const DICT = {
   promoInvalid: { th: 'โค้ดไม่ถูกต้องหรือหมดอายุ', en: 'Invalid or expired code' },
   promoApplied: { th: 'ใช้โค้ดแล้ว', en: 'Code applied' },
   useVoucher: { th: 'ใช้ Free Voucher', en: 'Use Free Voucher' },
-  voucherApplied: { th: 'ใช้ Voucher แล้ว — ไม่ต้องชำระเงิน', en: 'Voucher applied — nothing to pay' },
+  voucherApplied: { th: 'ใช้โค้ดแล้ว — ลดฟรี 1 ชม. ที่รายการถูกที่สุด', en: 'Code applied — 1 free hour on the cheapest slot' },
   voucherOffPeakOnly: { th: 'Voucher ใช้ได้เฉพาะช่วง Off-Peak', en: 'Voucher valid for Off-Peak slots only' },
+  codeNoExpiry: { th: 'ใช้ได้ทุกช่วงเวลา · ไม่มีวันหมดอายุ', en: 'Valid anytime · No expiry' },
   discount: { th: 'ส่วนลด', en: 'Discount' },
   amountPayable: { th: 'ยอดที่ต้องชำระ', en: 'Amount Payable' },
   payMethod: { th: 'วิธีชำระเงิน', en: 'Payment Method' },
@@ -78,7 +79,8 @@ export const DICT = {
   paid: { th: 'ชำระเงินสำเร็จ', en: 'Payment received' },
   bookingSuccess: { th: 'จองสำเร็จ!', en: 'Booking Confirmed!' },
   bookingRef: { th: 'หมายเลขการจอง', en: 'Booking Reference' },
-  stampEarned: { th: 'คุณได้รับ 1 แสตมป์', en: 'You earned 1 stamp' },
+  stampEarned: { th: 'คุณได้รับ {n} แสตมป์', en: 'You earned {n} stamp{s}' },
+  slotTaken: { th: 'ช่องเวลานี้ถูกจองไปแล้ว — เลือกใหม่', en: 'That slot was just booked — pick another' },
   backHome: { th: 'กลับหน้าแรก', en: 'Back to Home' },
   loginToBook: { th: 'เข้าสู่ระบบเพื่อจอง', en: 'Log in to book' },
 

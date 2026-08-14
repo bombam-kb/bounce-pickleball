@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
-import { isPeak, todayISO } from '../data/index.js'
+import { isPeak } from '../data/index.js'
 import { Icon, Modal, hourRangeLabel, printSlip } from '../components/ui.jsx'
 import Logo from '../components/Logo.jsx'
 
@@ -22,18 +22,15 @@ export default function Booking({ cart, onDone, onBack }) {
   const priced = items.map((it) => {
     const court = courts.find((c) => c.id === it.courtId)
     const peak = isPeak(it.hour, court)
-    return { ...it, court, peak, price: peak ? court.pricePeak : court.priceOff }
+    return { ...it, court, peak, price: peak ? (court?.pricePeak ?? 0) : (court?.priceOff ?? 0) }
   })
   const subtotal = priced.reduce((s, x) => s + x.price, 0)
-  const singleItem = items.length === 1
-  const myVouchers = vouchers.filter((v) => v.userId === user?.id && !v.used && v.expiry >= todayISO())
-  const voucherBlocked = !singleItem || priced[0].peak // off-peak only, and only for a single-item cart
-
-  const discount = voucherId ? subtotal : 0
+  const myVouchers = vouchers.filter((v) => v.userId === user?.id && !v.used)
+  const cheapestIdx = priced.reduce((best, it, i) => it.price < priced[best].price ? i : best, 0)
+  const discount = voucherId ? (priced[cheapestIdx]?.price ?? 0) : 0
   const total = subtotal - discount
 
   const toggleVoucher = (id) => {
-    if (voucherBlocked) return
     setVoucherId((cur) => (cur === id ? null : id))
   }
 
@@ -49,7 +46,9 @@ export default function Booking({ cart, onDone, onBack }) {
       setStep('success')
     } catch (e) {
       console.error('[Bounce] booking failed', e)
-      alert(lang === 'th' ? 'จองไม่สำเร็จ ลองใหม่อีกครั้ง' : 'Booking failed — please try again')
+      alert(e?.message === 'slot_taken'
+        ? t('slotTaken', lang)
+        : (lang === 'th' ? 'จองไม่สำเร็จ ลองใหม่อีกครั้ง' : 'Booking failed — please try again'))
       setStep('summary')
     }
   }
@@ -63,9 +62,10 @@ export default function Booking({ cart, onDone, onBack }) {
 
   if (step === 'success' && result) {
     const grandTotal = result.bookings.reduce((s, b) => s + b.total, 0)
+    const stampsGot = result.bookings.filter((b) => !b.voucherUsed).length
     return (
       <div className="page tc" style={{ paddingTop: 48 }}>
-        <div className="success-ball" />
+        <img src="/ball.png" className="success-ball" alt="" />
         <h2 className="mt-4" style={{ fontSize: 24 }}>{t('bookingSuccess', lang)}</h2>
         <p className="muted mt-2">{t('bookingRef', lang)}</p>
         <div className="num" style={{ fontSize: 26, letterSpacing: 1 }}>{result.bookings[0].ref}</div>
@@ -78,7 +78,7 @@ export default function Booking({ cart, onDone, onBack }) {
             return (
               <div key={b.id} className="row between" style={{ padding: '8px 0', borderBottom: i < result.bookings.length - 1 ? '1px dashed #E3E1D5' : 'none' }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{lang === 'th' ? c.nameTh : c.name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{lang === 'th' ? (c?.nameTh || '—') : (c?.name || '—')}</div>
                   <div className="tiny">{fmtDate(b.date, lang)} · {hourRangeLabel(b.hour, b.duration)}</div>
                 </div>
                 <div className="row gap-2" style={{ alignItems: 'center' }}>
@@ -97,10 +97,13 @@ export default function Booking({ cart, onDone, onBack }) {
             </div>
           )}
         </div>
-        <div className="card-flat pad-3 mt-4" style={{ background: '#fff', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
-          <Icon name="ball" size={18} />
-          +{result.bookings.filter((b) => !b.voucherUsed).length} {t('stampEarned', lang)}{result.voucherEarned ? (lang === 'th' ? ' → ได้โค้ดฟรี 1 ชม.!' : ' → Free hour code!') : ''}
-        </div>
+        {(stampsGot > 0 || result.voucherEarned) && (
+          <div className="card-flat pad-3 mt-4" style={{ background: '#fff', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
+            <Icon name="ball" size={18} />
+            {stampsGot > 0 && `+${stampsGot} ${t('stampEarned', lang, { n: stampsGot, s: stampsGot === 1 ? '' : 's' })}`}
+            {result.voucherEarned ? (lang === 'th' ? ' → ได้โค้ดฟรี 1 ชม.!' : ' → Free hour code!') : ''}
+          </div>
+        )}
         <button className="btn btn-pine btn-full btn-lg mt-6" onClick={onDone}>{t('backHome', lang)}</button>
       </div>
     )
@@ -114,10 +117,17 @@ export default function Booking({ cart, onDone, onBack }) {
         {priced.map((it, i) => (
           <div key={`${it.courtId}-${it.hour}`} className="row between" style={{ padding: '7px 0', borderBottom: i < priced.length - 1 ? '1px solid #E3E1D5' : 'none' }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 13.5 }}>{lang === 'th' ? it.court.nameTh : it.court.name}</div>
+              <div style={{ fontWeight: 700, fontSize: 13.5 }}>{lang === 'th' ? (it.court?.nameTh || '—') : (it.court?.name || '—')}</div>
               <div className="tiny">{fmtDate(date, lang)} · {hourRangeLabel(it.hour)} · {it.peak ? t('peak', lang) : t('offPeak', lang)}</div>
             </div>
-            <b className="num">฿{it.price}</b>
+            {voucherId && i === cheapestIdx ? (
+              <span className="num" style={{ textAlign: 'right' }}>
+                <span style={{ textDecoration: 'line-through', opacity: 0.45, fontSize: 12 }}>฿{it.price}</span>
+                {' '}<b>{t('free', lang)}</b>
+              </span>
+            ) : (
+              <b className="num">฿{it.price}</b>
+            )}
           </div>
         ))}
       </div>
@@ -135,15 +145,10 @@ export default function Booking({ cart, onDone, onBack }) {
               <div key={v.id} className="card-flat pad-3 row gap-2" style={{ alignItems: 'center' }}>
                 <div className="flex-1">
                   <div style={{ fontWeight: 700, fontSize: 14.5 }}>{t('codeHourOff', lang)}</div>
-                  <div className="tiny">{t('expires', lang)} {fmtDate(v.expiry, lang)}</div>
-                  {voucherBlocked && (
-                    <div className="tiny" style={{ color: 'var(--amber)' }}>
-                      {!singleItem ? t('voucherSingleOnly', lang) : t('voucherOffPeakOnly', lang)}
-                    </div>
-                  )}
+                  <div className="tiny">{t('codeNoExpiry', lang)}</div>
+                  <div className="tiny">{t('voucherCheapest', lang)}</div>
                 </div>
                 <button className={`btn btn-sm ${on ? 'btn-pine' : 'btn-lime'}`}
-                  disabled={voucherBlocked && !on}
                   onClick={() => toggleVoucher(v.id)}>
                   {on ? `✓ ${t('promoApplied', lang)}` : t('tapUseCode', lang)}
                 </button>

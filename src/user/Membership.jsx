@@ -1,7 +1,6 @@
 import React from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
-import { todayISO } from '../data/index.js'
 import { StampCard, ChannelChip, Icon, AvatarGlyph } from '../components/ui.jsx'
 
 export default function Membership() {
@@ -42,23 +41,17 @@ export default function Membership() {
       <h3 className="mt-6" style={{ fontSize: 16 }}>{t('vouchers', lang)}</h3>
       <div className="col gap-3 mt-2">
         {myVouchers.length === 0 && <div className="card-flat pad-4 tc tiny">{t('noVouchers', lang)}</div>}
-        {myVouchers.map((v) => {
-          const expired = v.expiry < todayISO()
-          const dead = v.used || expired
-          return (
-            <div key={v.id} className={`ticket ${dead ? 'used' : ''}`}>
-              <div className="ticket-left">{t('free', lang)}</div>
-              <div className="pad-4 flex-1">
-                <strong style={{ fontFamily: 'var(--font-display)' }}>{t('voucherFreeBooking', lang)}</strong>
-                <div className="tiny mt-1">
-                  {v.used ? (lang === 'th' ? 'ใช้แล้ว' : 'Used')
-                    : expired ? (lang === 'th' ? 'หมดอายุแล้ว' : 'Expired')
-                    : `${t('expires', lang)} ${fmtDate(v.expiry, lang)}`}
-                </div>
+        {myVouchers.map((v) => (
+          <div key={v.id} className={`ticket ${v.used ? 'used' : ''}`}>
+            <div className="ticket-left">{t('free', lang)}</div>
+            <div className="pad-4 flex-1">
+              <strong style={{ fontFamily: 'var(--font-display)' }}>{t('voucherFreeBooking', lang)}</strong>
+              <div className="tiny mt-1">
+                {v.used ? (lang === 'th' ? 'ใช้แล้ว' : 'Used') : t('codeNoExpiry', lang)}
               </div>
             </div>
-          )
-        })}
+          </div>
+        ))}
       </div>
 
       <h3 className="mt-6" style={{ fontSize: 16 }}>{t('stampHistory', lang)}</h3>

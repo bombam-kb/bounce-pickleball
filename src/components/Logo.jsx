@@ -6,7 +6,7 @@ const SRC = {
 }
 
 /**
- * Brand mark. `light` = dark word + lime ball (cream pages).
+ * Brand mark. `light` = dark word + lime ball (white pages).
  * `dark` = white word (pine header / admin). `animate` bounces the pickleball.
  */
 export default function Logo({

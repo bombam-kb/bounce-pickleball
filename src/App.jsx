@@ -55,15 +55,6 @@ export default function App() {
           <UserApp />
         )}
       </Suspense>
-      {side === 'user' && !lineCb && (
-        <button onClick={() => go('admin')} title="Staff only" style={{
-          position: 'fixed', bottom: 'calc(var(--u-nav-h) + env(safe-area-inset-bottom, 0px) + 10px)', left: 12, right: 'auto', zIndex: 80,
-          border: '2px solid var(--stroke)', borderRadius: 999,
-          background: 'var(--pine)', color: 'var(--lime)',
-          fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 11,
-          padding: '6px 12px', boxShadow: 'var(--shadow-pop-sm)', opacity: 0.85, cursor: 'pointer',
-        }}>⚙ Admin</button>
-      )}
     </StoreProvider>
   )
 }

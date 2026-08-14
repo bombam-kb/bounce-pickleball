@@ -11,7 +11,7 @@ import {
 import { auth, db, firebaseReady } from './firebase.js'
 import {
   COURTS, MEMBERS, SEED_BOOKINGS, SEED_VOUCHERS,
-  SEED_STAMP_LOG, SEED_SETTINGS, genRef, todayISO, addDays, isPeak, nowLocalISO,
+  SEED_STAMP_LOG, SEED_SETTINGS, genRef, todayISO, isPeak, nowLocalISO,
 } from './data/index.js'
 
 const Ctx = createContext(null)
@@ -299,7 +299,7 @@ export function StoreProvider({ children }) {
   // slot status for a court/date/hour
   const slotStatus = useCallback((court, date, hour) => {
     if (hour < court.open || hour >= court.close) return 'closed'
-    if (court.blocked.some((b) => b.date === date && b.hour === hour)) return 'closed'
+    if ((court.blocked || []).some((b) => b.date === date && b.hour === hour)) return 'closed'
     const now = new Date()
     const slotTime = new Date(date + 'T00:00:00')
     slotTime.setHours(hour)
@@ -319,21 +319,21 @@ export function StoreProvider({ children }) {
     if (!member) return false
     const batch = writeBatch(db)
     batch.set(doc(db, 'stampLog', nid('s')), { userId, date: todayISO(), delta, note, by })
-    let stamps = member.stamps + delta
-    let issued = false
-    if (stamps >= 10) { stamps -= 10; issued = true }
+    let stamps = (member.stamps || 0) + delta
+    let issued = 0
+    while (stamps >= 10) { stamps -= 10; issued += 1 }
     if (stamps < 0) stamps = 0
     batch.update(doc(db, 'members', userId), {
-      stamps, bookingsYear: delta > 0 ? member.bookingsYear + 1 : member.bookingsYear,
+      stamps, bookingsYear: delta > 0 ? (member.bookingsYear || 0) + 1 : member.bookingsYear,
     })
-    if (issued) {
+    for (let k = 0; k < issued; k += 1) {
       batch.set(doc(db, 'vouchers', nid('v')), {
-        userId, issued: todayISO(), expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'stamps',
+        userId, issued: todayISO(), expiry: null, used: false, source: 'stamps',
       })
     }
     await batch.commit()
-    return issued
-  }, [members, settings.voucherDays])
+    return issued > 0
+  }, [members])
 
   // ── multi-slot checkout — one payment, one booking record per selected cell.
   // All writes (bookings, stamp-code usage, stamps, earned codes) go in a
@@ -342,32 +342,36 @@ export function StoreProvider({ children }) {
   const createMultiBooking = useCallback(async (items, { voucherId, payMethod }) => {
     const priced = items.map((it) => {
       const court = courts.find((c) => c.id === it.courtId)
+      if (!court) throw new Error('court_missing')
       const base = isPeak(it.hour, court) ? court.pricePeak : court.priceOff
       return { ...it, base }
     })
-    const subtotal = priced.reduce((s, x) => s + x.base, 0)
-    let totalDiscount = 0
-    if (voucherId && priced.length === 1) totalDiscount = priced[0].base
+    const clash = priced.some((it, i) =>
+      priced.some((o, j) => j !== i && o.courtId === it.courtId && o.date === it.date && o.hour === it.hour)
+      || bookings.some((b) => b.courtId === it.courtId && b.date === it.date && b.hour === it.hour && b.status !== 'cancelled')
+    )
+    if (clash) throw new Error('slot_taken')
+    const applyVoucher = !!voucherId && priced.length > 0
+    const cheapestIdx = applyVoucher
+      ? priced.reduce((best, it, i) => it.base < priced[best].base ? i : best, 0)
+      : -1
 
     const createdAt = nowLocalISO()
     const ref = genRef()          // one reference for the whole booking session
-    let allocated = 0
     const newBookings = priced.map((it, i) => {
-      const disc = i === priced.length - 1
-        ? totalDiscount - allocated
-        : Math.round(totalDiscount * (it.base / subtotal))
-      if (i < priced.length - 1) allocated += disc
+      const disc = i === cheapestIdx ? it.base : 0
       const total = it.base - disc
       return {
         id: nid('b'), ref, userId: user.id, courtId: it.courtId, date: it.date, hour: it.hour, duration: 60,
-        price: it.base, discount: disc, total, payMethod: voucherId ? 'voucher' : payMethod,
-        status: 'upcoming', createdAt, voucherUsed: !!voucherId && i === 0,
+        price: it.base, discount: disc, total,
+        payMethod: i === cheapestIdx && applyVoucher ? 'voucher' : payMethod,
+        status: 'upcoming', createdAt, voucherUsed: applyVoucher && i === cheapestIdx,
       }
     })
 
     const batch = writeBatch(db)
     newBookings.forEach((b) => batch.set(doc(db, 'bookings', b.id), stripId(b)))
-    if (voucherId) batch.update(doc(db, 'vouchers', voucherId), { used: true })
+    if (applyVoucher) batch.update(doc(db, 'vouchers', voucherId), { used: true })
 
     // one stamp per booking not covered by a voucher redemption.
     // use the live `user` (always present when booking) as the stamp source so
@@ -387,7 +391,7 @@ export function StoreProvider({ children }) {
       }))
       for (let k = 0; k < earned; k += 1) {
         batch.set(doc(db, 'vouchers', nid('v')), {
-          userId: user.id, issued: todayISO(), expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'stamps',
+          userId: user.id, issued: todayISO(), expiry: null, used: false, source: 'stamps',
         })
       }
     }
@@ -404,7 +408,7 @@ export function StoreProvider({ children }) {
         lang === 'th' ? 'สะสมแสตมป์ครบ 10 ดวงแล้ว' : 'You collected 10 stamps')
     }
     return { bookings: newBookings, voucherEarned }
-  }, [courts, user, notify, lang, settings])
+  }, [courts, bookings, user, notify, lang])
 
   const cancelBooking = useCallback(async (bookingId, by = 'user') => {
     const bk = bookings.find((b) => b.id === bookingId)
@@ -449,11 +453,18 @@ export function StoreProvider({ children }) {
     if (!uid) return []
     const existing = userId ? members.find((m) => m.id === userId) : null
 
+    const clash = items.some((it, i) =>
+      items.some((o, j) => j !== i && o.courtId === it.courtId && o.date === it.date && o.hour === it.hour)
+      || bookings.some((b) => b.courtId === it.courtId && b.date === it.date && b.hour === it.hour && b.status !== 'cancelled')
+    )
+    if (clash) throw new Error('slot_taken')
+
     const batch = writeBatch(db)
     const createdAt = nowLocalISO()
     const ref = genRef()          // one reference for the whole booking session
     const newBookings = items.map((it) => {
       const court = courts.find((c) => c.id === it.courtId)
+      if (!court) throw new Error('court_missing')
       const base = (isPeak(it.hour, court) ? court.pricePeak : court.priceOff) * (duration / 60)
       return {
         id: nid('b'), ref, userId: uid, courtId: it.courtId, date: it.date, hour: it.hour, duration,
@@ -486,7 +497,7 @@ export function StoreProvider({ children }) {
     }))
     for (let k = 0; k < earned; k += 1) {
       batch.set(doc(db, 'vouchers', nid('v')), {
-        userId: uid, issued: todayISO(), expiry: addDays(todayISO(), settings.voucherDays), used: false, source: 'stamps',
+        userId: uid, issued: todayISO(), expiry: null, used: false, source: 'stamps',
       })
     }
 
@@ -494,7 +505,7 @@ export function StoreProvider({ children }) {
     const who = existing?.name ?? guest?.name ?? uid
     await logAdmin(`Booked ${newBookings.length} slot(s) for ${who}${guest && !userId ? ' (guest)' : ''} — ${lang === 'th' ? 'จองให้ลูกค้า (โทร/walk-in)' : 'manual booking (phone/walk-in)'}`)
     return newBookings
-  }, [courts, members, settings, logAdmin, lang])
+  }, [courts, members, bookings, logAdmin, lang])
 
   const adminAdjustStamps = useCallback(async (userId, delta, reason) => {
     await addStamp(userId, `Admin adjust: ${reason}`, delta, 'admin')

@@ -40,19 +40,14 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
+html, body {
+  background: #fff;
+}
 body {
   font-family: var(--font-body);
-  background: var(--cream);
   color: var(--ink);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-}
-/* subtle ball-dot texture on the page background */
-body::before {
-  content: '';
-  position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background-image: radial-gradient(rgba(16,27,20,0.05) 1.5px, transparent 1.5px);
-  background-size: 26px 26px;
 }
 #root { position: relative; z-index: 1; }
 
@@ -208,7 +203,7 @@ a { color: inherit; }
 }
 
 .brand-logo {
-  --brand-mask: var(--cream);
+  --brand-mask: #fff;
   position: relative;
   display: inline-block;
   line-height: 0;
@@ -248,24 +243,11 @@ a { color: inherit; }
 .brand-ball {
   top: 62.61%;
   z-index: 2;
-  background-color: var(--lime);
-  background-image:
-    radial-gradient(circle at 32% 34%, var(--pine) 0 13%, transparent 14%),
-    radial-gradient(circle at 68% 28%, var(--pine) 0 11%, transparent 12%),
-    radial-gradient(circle at 50% 62%, var(--pine) 0 12%, transparent 13%),
-    radial-gradient(circle at 74% 64%, var(--pine) 0 10%, transparent 11%),
-    radial-gradient(circle at 28% 70%, var(--pine) 0 10%, transparent 11%);
-  box-shadow: inset -1px -1px 0 rgba(16, 27, 20, 0.18);
+  background: url('/ball.png') center / contain no-repeat;
   transform-origin: 50% 100%;
 }
 .brand-dark .brand-ball {
-  background-color: #fff;
-  background-image:
-    radial-gradient(circle at 32% 34%, var(--pine) 0 13%, transparent 14%),
-    radial-gradient(circle at 68% 28%, var(--pine) 0 11%, transparent 12%),
-    radial-gradient(circle at 50% 62%, var(--pine) 0 12%, transparent 13%),
-    radial-gradient(circle at 74% 64%, var(--pine) 0 10%, transparent 11%),
-    radial-gradient(circle at 28% 70%, var(--pine) 0 10%, transparent 11%);
+  background: url('/ball.png') center / contain no-repeat;
 }
 .brand-ball-shadow {
   top: 75.2%;
@@ -395,30 +377,8 @@ a { color: inherit; }
 .u-nav button.on .nav-dot { background: var(--lime); border: 1.5px solid var(--stroke); }
 .nav-dot { width: 34px; height: 26px; border-radius: var(--r-pill); display: flex; align-items: center; justify-content: center; border: 1.5px solid transparent; transition: background 0.15s; }
 
-.page { padding: 16px 16px 24px; animation: pageIn 0.25s ease; }
+.page { padding: 16px 16px 24px; animation: pageIn 0.25s ease; background: #fff; }
 @keyframes pageIn { from { opacity: 0; transform: translateY(8px); } }
-
-/* hero */
-.hero {
-  background: var(--pine);
-  color: var(--cream);
-  border: 2px solid var(--stroke); border-radius: var(--r-lg);
-  box-shadow: var(--shadow-pop);
-  padding: 20px 18px;
-  position: relative; overflow: hidden;
-}
-.hero::after {
-  content: ''; position: absolute; right: -30px; top: -30px;
-  width: 130px; height: 130px; border-radius: 50%;
-  background: var(--lime); opacity: 0.16;
-}
-.hero::before {
-  content: ''; position: absolute; right: 24px; bottom: -46px;
-  width: 90px; height: 90px; border-radius: 50%;
-  border: 2px dashed rgba(198, 241, 53, 0.5);
-}
-.hero h1 { font-size: 22px; font-weight: 800; color: var(--lime); }
-.hero p { font-size: 13.5px; opacity: 0.9; margin-top: 4px; }
 
 /* date scroller */
 .date-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px; scrollbar-width: none; }
@@ -551,14 +511,8 @@ a { color: inherit; }
   animation: popIn 0.3s cubic-bezier(0.34, 1.5, 0.64, 1) both;
 }
 .stamp-ball {
-  width: 58%; aspect-ratio: 1; border-radius: 50%;
-  background-color: var(--lime);
-  background-image:
-    radial-gradient(circle at 32% 34%, var(--pine) 0 12%, transparent 13%),
-    radial-gradient(circle at 68% 28%, var(--pine) 0 10%, transparent 11%),
-    radial-gradient(circle at 50% 62%, var(--pine) 0 11%, transparent 12%),
-    radial-gradient(circle at 74% 64%, var(--pine) 0 9%, transparent 10%),
-    radial-gradient(circle at 28% 70%, var(--pine) 0 9%, transparent 10%);
+  width: 72%; height: auto;
+  object-fit: contain; display: block;
 }
 .stamp-cell.freebie {
   border-color: #C5C8C0; color: var(--ink);
@@ -599,30 +553,15 @@ a { color: inherit; }
 }
 .qr-box::after {
   content: ''; position: absolute; left: 50%; top: 50%;
-  width: 44px; height: 44px; transform: translate(-50%, -50%);
-  border-radius: 50%; border: 2px solid var(--stroke);
+  width: 48px; height: 48px; transform: translate(-50%, -50%);
+  background: url('/ball.png') center / contain no-repeat;
   box-shadow: 0 0 0 12px #fff;
-  background-color: var(--lime);
-  background-image:
-    radial-gradient(circle at 32% 34%, var(--pine) 0 3.5px, transparent 4px),
-    radial-gradient(circle at 68% 28%, var(--pine) 0 3px, transparent 3.5px),
-    radial-gradient(circle at 50% 62%, var(--pine) 0 3.5px, transparent 4px),
-    radial-gradient(circle at 74% 64%, var(--pine) 0 2.8px, transparent 3.2px),
-    radial-gradient(circle at 28% 70%, var(--pine) 0 2.8px, transparent 3.2px);
 }
 
 /* success screen */
 .success-ball {
-  width: 88px; height: 88px; border-radius: 50%; margin: 0 auto;
-  background-color: var(--lime);
-  background-image:
-    radial-gradient(circle at 32% 34%, var(--pine) 0 8px, transparent 9px),
-    radial-gradient(circle at 68% 28%, var(--pine) 0 7px, transparent 8px),
-    radial-gradient(circle at 50% 62%, var(--pine) 0 8px, transparent 9px),
-    radial-gradient(circle at 74% 64%, var(--pine) 0 6px, transparent 7px),
-    radial-gradient(circle at 28% 70%, var(--pine) 0 6px, transparent 7px);
-  border: 2px solid var(--stroke); box-shadow: var(--shadow-pop);
-  display: flex; align-items: center; justify-content: center; font-size: 0;
+  width: 88px; height: 88px; margin: 0 auto;
+  object-fit: contain; display: block;
   animation: bounceIn 0.5s cubic-bezier(0.34, 1.5, 0.64, 1) both;
 }
 
@@ -679,7 +618,7 @@ a { color: inherit; }
 .tab.on { background: var(--pine); color: var(--lime); box-shadow: var(--shadow-pop-sm); }
 
 /* ══════════════ ADMIN SHELL ══════════════ */
-.a-shell { display: flex; min-height: 100dvh; }
+.a-shell { display: flex; min-height: 100dvh; background: #fff; }
 .a-side {
   width: 230px; flex-shrink: 0;   background: var(--pine); color: var(--cream);
   border-right: 2px solid var(--stroke);
@@ -687,9 +626,6 @@ a { color: inherit; }
   display: flex; flex-direction: column; gap: 4px;
   --brand-mask: var(--pine);
 }
-body:has(.u-shell) { background: #fff; }
-body:has(.u-shell)::before { display: none; }
-
 .a-side .u-logo { margin-bottom: 18px; padding: 0 4px; }
 .a-side .lang-toggle { border-color: var(--lime); }
 .a-side .lang-toggle button { color: var(--cream); }
@@ -706,7 +642,7 @@ body:has(.u-shell)::before { display: none; }
   background: var(--lime); color: var(--pine); opacity: 1;
   border-color: var(--stroke); box-shadow: var(--shadow-pop-sm);
 }
-.a-main { flex: 1; min-width: 0; padding: 22px 26px 60px; max-width: 1180px; }
+.a-main { flex: 1; min-width: 0; padding: 22px 26px 60px; max-width: 1180px; background: #fff; }
 .a-title { font-size: 24px; font-weight: 800; }
 
 .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
