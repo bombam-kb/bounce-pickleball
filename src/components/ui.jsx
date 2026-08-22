@@ -92,14 +92,14 @@ export const CalendarModal = ({ value, onSelect, onClose, minDate, maxDate, adva
   const cells = [...Array(firstDow).fill(null), ...Array.from({ length: total }, (_, i) => i + 1)]
 
   const prevLastDay = new Date(viewY, viewM, 0)
-  const canPrev = isoOf(prevLastDay.getFullYear(), prevLastDay.getMonth(), prevLastDay.getDate()) >= minDate
+  const canPrev = !minDate || isoOf(prevLastDay.getFullYear(), prevLastDay.getMonth(), prevLastDay.getDate()) >= minDate
   const nextFirstDay = new Date(viewY, viewM + 1, 1)
-  const canNext = isoOf(nextFirstDay.getFullYear(), nextFirstDay.getMonth(), nextFirstDay.getDate()) <= maxDate
+  const canNext = !maxDate || isoOf(nextFirstDay.getFullYear(), nextFirstDay.getMonth(), nextFirstDay.getDate()) <= maxDate
 
   const goPrev = () => { const d = new Date(viewY, viewM - 1, 1); setViewY(d.getFullYear()); setViewM(d.getMonth()) }
   const goNext = () => { const d = new Date(viewY, viewM + 1, 1); setViewY(d.getFullYear()); setViewM(d.getMonth()) }
   const today = todayISO()
-  const maxD = new Date(maxDate + 'T00:00:00')
+  const maxD = maxDate ? new Date(maxDate + 'T00:00:00') : null
 
   return (
     <Modal onClose={onClose}>
@@ -114,7 +114,7 @@ export const CalendarModal = ({ value, onSelect, onClose, minDate, maxDate, adva
           </button>
         </div>
       </div>
-      {advanceDays != null && (
+      {advanceDays != null && maxD && (
         <p className="tiny muted" style={{ marginTop: -6, marginBottom: 10 }}>
           {t('calendarRangeNote', lang, { n: advanceDays, d: `${maxD.getDate()} ${MONTH_NAMES[lang][maxD.getMonth()]}` })}
         </p>
@@ -124,7 +124,7 @@ export const CalendarModal = ({ value, onSelect, onClose, minDate, maxDate, adva
         {cells.map((day, i) => {
           if (day === null) return <div key={'e' + i} />
           const iso = isoOf(viewY, viewM, day)
-          const disabled = iso < minDate || iso > maxDate
+          const disabled = (minDate && iso < minDate) || (maxDate && iso > maxDate)
           return (
             <button key={iso} type="button"
               className={`cal-day ${iso === value ? 'selected' : ''} ${iso === today ? 'today' : ''}`}

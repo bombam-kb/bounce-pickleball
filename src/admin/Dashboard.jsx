@@ -2,7 +2,8 @@ import React from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { todayISO, addDays } from '../data/index.js'
-import { hourLabel, StatusChip, useDateRange, DateRangeBar, Icon, AvatarGlyph, downloadCSV } from '../components/ui.jsx'
+import { Icon, DateRangeBar, StatusChip, hourLabel, AvatarGlyph, downloadCSV, useDateRange } from '../components/ui.jsx'
+import CourtQueue from './CourtQueue.jsx'
 
 const daysBetween = (from, to) => Math.round((new Date(to) - new Date(from)) / 86400000) + 1
 
@@ -76,49 +77,29 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="a-grid-2 mt-4">
-        <div className="card pad-5">
-          <div className="row between wrap gap-2">
-            <h3 style={{ fontSize: 15 }}>{t('revenueChart', lang)}</h3>
-            <div className="row gap-2 wrap">
-              <span className="chip chip-lime num">฿{rangeRevenue.toLocaleString()}</span>
-              <span className="chip chip-grey num">{rangeBk.length} {lang === 'th' ? 'รายการ' : 'bookings'}</span>
+      <div className="card pad-5 mt-4">
+        <div className="row between wrap gap-2">
+          <h3 style={{ fontSize: 15 }}>{t('revenueChart', lang)}</h3>
+          <div className="row gap-2 wrap">
+            <span className="chip chip-lime num">฿{rangeRevenue.toLocaleString()}</span>
+            <span className="chip chip-grey num">{rangeBk.length} {lang === 'th' ? 'รายการ' : 'bookings'}</span>
+          </div>
+        </div>
+        <div className="mt-2"><DateRangeBar range={range} lang={lang} /></div>
+        <div className="bars mt-3">
+          {days.map((d, i) => (
+            <div className="bar-col" key={d}>
+              <span className="tiny num">฿{daily[i]}</span>
+              <div className={`bar ${d === T ? 'today-bar' : ''}`}
+                style={{ height: `${(daily[i] / max) * 100}%`, animationDelay: `${i * 0.06}s` }} />
+              <span className="tiny">{fmtDate(d, lang).split(' ').slice(1).join(' ')}</span>
             </div>
-          </div>
-          <div className="mt-2"><DateRangeBar range={range} lang={lang} /></div>
-          <div className="bars mt-3">
-            {days.map((d, i) => (
-              <div className="bar-col" key={d}>
-                <span className="tiny num">฿{daily[i]}</span>
-                <div className={`bar ${d === T ? 'today-bar' : ''}`}
-                  style={{ height: `${(daily[i] / max) * 100}%`, animationDelay: `${i * 0.06}s` }} />
-                <span className="tiny">{fmtDate(d, lang).split(' ').slice(1).join(' ')}</span>
-              </div>
-            ))}
-          </div>
-          {clipped && <p className="tiny muted mt-2">{t('rangeClipped', lang)}</p>}
+          ))}
         </div>
-
-        <div className="card pad-5">
-          <h3 style={{ fontSize: 15 }}>{t('courtStatusNow', lang)}</h3>
-          <div className="col gap-2 mt-3">
-            {courts.map((c) => {
-              const busy = todayBk.some((b) => b.courtId === c.id && b.hour <= nowHour && nowHour < b.hour + b.duration / 60)
-              return (
-                <div key={c.id} className="card-flat pad-3 row between">
-                  <div className="row gap-2">
-                    <span style={{ width: 12, height: 12, borderRadius: 3, background: c.photo, border: '1.5px solid var(--stroke)' }} />
-                    <strong style={{ fontSize: 13.5 }}>{lang === 'th' ? c.nameTh : c.name}</strong>
-                  </div>
-                  <span className={`chip ${busy ? 'chip-red' : 'chip-green'}`}>
-                    {busy ? t('inUse', lang) : t('vacant', lang)}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        {clipped && <p className="tiny muted mt-2">{t('rangeClipped', lang)}</p>}
       </div>
+
+      <CourtQueue />
 
       <div className="card pad-5 mt-4">
         <h3 style={{ fontSize: 15 }}>{t('upcomingToday', lang)} ({upcomingToday.length})</h3>

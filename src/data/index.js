@@ -22,6 +22,17 @@ export const nowLocalISO = () => {
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`
 }
 
+/** Bookings / cart rows: date, then hour, then court column order. */
+export const sortSlotItems = (items, courtIds = []) =>
+  [...items].sort((a, b) => {
+    const d = String(a.date || '').localeCompare(String(b.date || ''))
+    if (d) return d
+    if (a.hour !== b.hour) return a.hour - b.hour
+    const ia = courtIds.indexOf(a.courtId)
+    const ib = courtIds.indexOf(b.courtId)
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib)
+  })
+
 /** Per-court peak window. End hour is exclusive. Missing fields default to 17:00–21:00, on. */
 export const isPeak = (hour, court) => {
   if (!court || court.peakEnabled === false) return false

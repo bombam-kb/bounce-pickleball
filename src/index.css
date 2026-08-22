@@ -355,11 +355,12 @@ a { color: inherit; }
 }
 .u-dock-cart {
   width: 100%; max-width: 560px;
+  pointer-events: none;
 }
 .u-dock-cart:not(:empty) {
-  pointer-events: auto;
   padding: 0 10px 8px;
 }
+.u-dock-cart .cart-bar { pointer-events: auto; }
 .u-nav {
   position: relative; width: 100%;
   display: flex; justify-content: center;
@@ -476,16 +477,59 @@ a { color: inherit; }
   font-variant-numeric: tabular-nums; letter-spacing: 0;
 }
 .avail-cell {
-  width: 100%; min-width: 0; padding: 8px 2px;
+  width: 100%; min-width: 0; min-height: 44px; padding: 8px 2px;
   border: 2px solid var(--stroke); border-radius: var(--r-sm);
   background: var(--paper); font-family: var(--font-display); font-weight: 700; font-size: 11px;
   color: var(--ink); transition: transform 0.08s;
+  touch-action: manipulation;
+  scroll-margin-bottom: calc(var(--u-nav-h) + env(safe-area-inset-bottom, 0px) + 24px);
+}
+.page.has-cart .avail-cell {
+  scroll-margin-bottom: calc(var(--u-nav-h) + env(safe-area-inset-bottom, 0px) + 200px);
 }
 .avail-cell.peak { background: var(--lime-soft); }
 .avail-cell.booked { background: #EEEEE8; color: var(--ink-3); border-color: var(--ink-3); }
 .avail-cell.closed, .avail-cell.past { background: transparent; color: #C9CFC9; border-color: #D8DCD4; border-style: dashed; cursor: not-allowed; }
 .avail-cell.selected { background: var(--pine); color: var(--lime); box-shadow: var(--shadow-pop-sm); }
 .avail-cell:not(:disabled):active { transform: scale(0.92); }
+
+/* admin court queue */
+.avail-table.queue-table th:first-child,
+.avail-table.queue-table td:first-child { width: 4.4rem; }
+.queue-strip { display: flex; gap: 7px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; }
+.queue-strip::-webkit-scrollbar { display: none; }
+.queue-day {
+  flex: 1; min-width: 0; padding: 8px 4px; text-align: center;
+  border: 2px solid var(--stroke); border-radius: var(--r-md);
+  background: var(--paper); font-family: var(--font-display);
+}
+.queue-day .q-dow { font-size: 11px; font-weight: 600; color: var(--ink-3); }
+.queue-day .q-num { font-size: 18px; font-weight: 800; line-height: 1.2; }
+.queue-day .q-fill { font-size: 10px; font-weight: 600; color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.queue-day.on { background: var(--lime); box-shadow: var(--shadow-pop-sm); }
+.queue-day.packed .q-fill { color: var(--clay); }
+.queue-cell {
+  width: 100%; min-width: 0; min-height: 36px; padding: 5px 4px;
+  border: 2px solid var(--stroke); border-radius: var(--r-sm);
+  background: var(--paper); font-family: var(--font-display); font-weight: 700; font-size: 11px;
+  color: var(--ink); text-align: center;
+}
+.queue-cell.peak { background: var(--lime-soft); }
+.queue-cell.booked,
+.queue-cell.booked.peak {
+  background: #EEEEE8; color: var(--ink-3); border-color: var(--ink-3);
+  text-align: center; cursor: pointer;
+}
+.queue-cell.booked .q-name {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.queue-cell.past { background: #EEEEE8; color: var(--ink-3); cursor: not-allowed; }
+.queue-cell.closed {
+  background: transparent; color: #C9CFC9; border-color: #D8DCD4; border-style: dashed; cursor: not-allowed;
+}
+.queue-cell.free:not(:disabled):active { transform: scale(0.94); }
+.avail-table tr.queue-now td.avail-time { color: var(--pine); }
+.avail-table td.avail-time.now { font-weight: 800; }
 
 /* cart summary — lives inside .u-dock above the tab bar */
 .cart-bar {
@@ -495,7 +539,7 @@ a { color: inherit; }
   padding: 12px 14px; box-shadow: var(--shadow-pop);
   animation: slideUp 0.2s ease;
 }
-.cart-bar-spacer { height: 156px; }
+.cart-bar-spacer { height: 200px; }
 
 /* stamp card */
 .stamp-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }

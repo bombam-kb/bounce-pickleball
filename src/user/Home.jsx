@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
-import { todayISO, addDays, isPeak } from '../data/index.js'
+import { todayISO, addDays, isPeak, sortSlotItems } from '../data/index.js'
 import { Icon, CalendarModal } from '../components/ui.jsx'
 
 export default function Home({ onCheckout, cartHost }) {
@@ -21,14 +21,26 @@ export default function Home({ onCheckout, cartHost }) {
   const closeHour = activeCourts.length ? Math.max(...activeCourts.map((c) => c.close)) : 0
   const hours = Array.from({ length: Math.max(0, closeHour - openHour) }, (_, i) => openHour + i)
 
+  const courtOrder = activeCourts.map((c) => c.id)
   const isSelected = (courtId, hour) => selected.some((s) => s.courtId === courtId && s.hour === hour)
-  const toggleSlot = (court, hour) => {
+  const liftAboveDock = (el) => {
+    if (!el) return
+    const dock = document.querySelector('.u-dock')
+    const dockTop = dock ? dock.getBoundingClientRect().top : window.innerHeight
+    const gap = 16
+    const bottom = el.getBoundingClientRect().bottom
+    if (bottom > dockTop - gap) {
+      window.scrollBy({ top: bottom - dockTop + gap, behavior: 'smooth' })
+    }
+  }
+  const toggleSlot = (court, hour, el) => {
     if (isSelected(court.id, hour)) {
       setSelected((sel) => sel.filter((s) => !(s.courtId === court.id && s.hour === hour)))
       return
     }
     if (slotStatus(court, date, hour) !== 'free') return
-    setSelected((sel) => [...sel, { courtId: court.id, hour }])
+    setSelected((sel) => sortSlotItems([...sel, { courtId: court.id, hour }], courtOrder))
+    requestAnimationFrame(() => requestAnimationFrame(() => liftAboveDock(el)))
   }
 
   const priceOf = (courtId, hour) => {
@@ -37,7 +49,7 @@ export default function Home({ onCheckout, cartHost }) {
   }
   const total = selected.reduce((s, x) => s + priceOf(x.courtId, x.hour), 0)
 
-  const checkout = () => onCheckout({ date, items: selected })
+  const checkout = () => onCheckout({ date, items: sortSlotItems(selected, courtOrder) })
 
   const cartBar = selected.length > 0 && (
     <div className="cart-bar">
@@ -57,7 +69,7 @@ export default function Home({ onCheckout, cartHost }) {
   )
 
   return (
-    <div className="page">
+    <div className={`page${selected.length > 0 ? ' has-cart' : ''}`}>
       <h3 style={{ fontSize: 16 }}>{t('pickDate', lang)}</h3>
       <button className="date-trigger mt-2" onClick={() => setCalOpen(true)}>
         <Icon name="calendar" size={20} />
@@ -108,7 +120,7 @@ export default function Home({ onCheckout, cartHost }) {
                         <button type="button"
                           className={`avail-cell ${st} ${peak ? 'peak' : ''} ${sel ? 'selected' : ''}`}
                           disabled={st !== 'free' && !sel}
-                          onClick={() => toggleSlot(c, hour)}>
+                          onClick={(e) => toggleSlot(c, hour, e.currentTarget)}>
                           {sel ? `✓ ฿${priceOf(c.id, hour)}` : st === 'free' ? t('slotFree', lang) : t('slot' + st[0].toUpperCase() + st.slice(1), lang)}
                         </button>
                       </td>

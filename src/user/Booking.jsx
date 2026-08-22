@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
-import { isPeak } from '../data/index.js'
+import { isPeak, sortSlotItems } from '../data/index.js'
 import { Icon, Modal, hourRangeLabel, printSlip } from '../components/ui.jsx'
 import Logo from '../components/Logo.jsx'
 
 // step: summary → qr (if promptpay) → success
 export default function Booking({ cart, onDone, onBack }) {
   const { lang, courts, user, vouchers, createMultiBooking } = useStore()
-  const { date, items } = cart
+  const { date, items: rawItems } = cart
+  const items = sortSlotItems(rawItems, courts.map((c) => c.id))
 
   const [voucherId, setVoucherId] = useState(null)
-  const [payMethod, setPayMethod] = useState('promptpay')
   const [step, setStep] = useState('summary')
   const [result, setResult] = useState(null)
 
@@ -35,13 +35,13 @@ export default function Booking({ cart, onDone, onBack }) {
   }
 
   const doPay = () => {
-    if (total > 0 && payMethod === 'promptpay') { setStep('qr'); return }
+    if (total > 0) { setStep('qr'); return }
     finish()
   }
   const finish = async () => {
     try {
       const r = await createMultiBooking(items.map((it) => ({ courtId: it.courtId, date, hour: it.hour })),
-        { voucherId, payMethod })
+        { voucherId, payMethod: 'promptpay' })
       setResult(r)
       setStep('success')
     } catch (e) {
@@ -174,13 +174,12 @@ export default function Booking({ cart, onDone, onBack }) {
         </div>
       </div>
 
-      {/* payment method */}
       {total > 0 && (
         <div className="mt-3">
           <label className="label">{t('payMethod', lang)}</label>
-          <div className="col gap-2">
-            <PayOpt icon="qr" label={t('payPromptPay', lang)} on={payMethod === 'promptpay'} onClick={() => setPayMethod('promptpay')} />
-            <PayOpt icon="card" label={t('payCard', lang)} on={payMethod === 'card'} onClick={() => setPayMethod('card')} />
+          <div className="card-flat pad-3 row gap-3" style={{ background: 'var(--lime-soft)', boxShadow: 'var(--shadow-pop-sm)' }}>
+            <Icon name="qr" />
+            <span className="flex-1" style={{ fontSize: 14.5, fontWeight: 600 }}>{t('payPromptPay', lang)}</span>
           </div>
         </div>
       )}
@@ -204,19 +203,3 @@ export default function Booking({ cart, onDone, onBack }) {
     </div>
   )
 }
-
-const PayOpt = ({ icon, label, on, onClick, disabled }) => (
-  <button className="card-flat pad-3 row gap-3" onClick={onClick} disabled={disabled}
-    style={{
-      background: on ? 'var(--lime-soft)' : '#fff', width: '100%',
-      boxShadow: on ? 'var(--shadow-pop-sm)' : 'none', opacity: disabled ? 0.45 : 1,
-      cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'left', fontSize: 14.5, fontWeight: 600,
-    }}>
-    <Icon name={icon} />
-    <span className="flex-1">{label}</span>
-    <span style={{
-      width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--stroke)',
-      background: on ? 'var(--pine)' : 'transparent', flexShrink: 0,
-    }} />
-  </button>
-)

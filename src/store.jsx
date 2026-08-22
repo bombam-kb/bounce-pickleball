@@ -11,7 +11,7 @@ import {
 import { auth, db, firebaseReady } from './firebase.js'
 import {
   COURTS, MEMBERS, SEED_BOOKINGS, SEED_VOUCHERS,
-  SEED_STAMP_LOG, SEED_SETTINGS, genRef, todayISO, isPeak, nowLocalISO,
+  SEED_STAMP_LOG, SEED_SETTINGS, genRef, todayISO, isPeak, nowLocalISO, sortSlotItems,
 } from './data/index.js'
 
 const Ctx = createContext(null)
@@ -340,7 +340,8 @@ export function StoreProvider({ children }) {
   // single Firestore batch so the stamp math is computed exactly once (no race
   // between per-booking snapshot reads).
   const createMultiBooking = useCallback(async (items, { voucherId, payMethod }) => {
-    const priced = items.map((it) => {
+    const ordered = sortSlotItems(items, courts.map((c) => c.id))
+    const priced = ordered.map((it) => {
       const court = courts.find((c) => c.id === it.courtId)
       if (!court) throw new Error('court_missing')
       const base = isPeak(it.hour, court) ? court.pricePeak : court.priceOff
@@ -453,8 +454,9 @@ export function StoreProvider({ children }) {
     if (!uid) return []
     const existing = userId ? members.find((m) => m.id === userId) : null
 
-    const clash = items.some((it, i) =>
-      items.some((o, j) => j !== i && o.courtId === it.courtId && o.date === it.date && o.hour === it.hour)
+    const ordered = sortSlotItems(items, courts.map((c) => c.id))
+    const clash = ordered.some((it, i) =>
+      ordered.some((o, j) => j !== i && o.courtId === it.courtId && o.date === it.date && o.hour === it.hour)
       || bookings.some((b) => b.courtId === it.courtId && b.date === it.date && b.hour === it.hour && b.status !== 'cancelled')
     )
     if (clash) throw new Error('slot_taken')
@@ -462,7 +464,7 @@ export function StoreProvider({ children }) {
     const batch = writeBatch(db)
     const createdAt = nowLocalISO()
     const ref = genRef()          // one reference for the whole booking session
-    const newBookings = items.map((it) => {
+    const newBookings = ordered.map((it) => {
       const court = courts.find((c) => c.id === it.courtId)
       if (!court) throw new Error('court_missing')
       const base = (isPeak(it.hour, court) ? court.pricePeak : court.priceOff) * (duration / 60)
