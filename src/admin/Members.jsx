@@ -4,11 +4,13 @@ import { t, fmtDate } from '../i18n.js'
 import { Icon, Modal, ChannelChip, StampCard, AvatarGlyph, downloadCSV, usePager, Pager } from '../components/ui.jsx'
 
 export default function Members() {
-  const { lang, members, updateMember, stampLog, adminAdjustStamps, adminLog, logAdmin } = useStore()
+  const { lang, members, updateMember, stampLog, adminAdjustStamps, adminMergeMembers, adminLog, logAdmin } = useStore()
   const [q, setQ] = useState('')
   const [fChannel, setFChannel] = useState('all')
   const [detail, setDetail] = useState(null)
   const [adjust, setAdjust] = useState(null)
+  const [mergeFrom, setMergeFrom] = useState('')
+  const [mergeBusy, setMergeBusy] = useState(false)
 
   const rows = members
     .filter((m) => fChannel === 'all' || m.channel === fChannel)
@@ -65,7 +67,7 @@ export default function Members() {
                   <td>
                     <div className="row gap-2">
                       <span><AvatarGlyph avatar={x.avatar} size={18} /></span>
-                      <div><b>{x.name}</b><div className="tiny">{x.email} · {x.country}</div></div>
+                      <div><b>{x.name}</b><div className="tiny">{x.email} · {x.country}{x.channel === 'line' ? ` · ${x.id}` : ''}</div></div>
                     </div>
                   </td>
                   <td><ChannelChip channel={x.channel} /></td>
@@ -104,6 +106,7 @@ export default function Members() {
             <div className="flex-1">
               <h3 style={{ fontSize: 18 }}>{m.name}</h3>
               <div className="tiny">{m.email} {m.phone && `· ${m.phone}`}</div>
+              <div className="tiny num">{m.id}</div>
             </div>
           </div>
 
@@ -133,6 +136,36 @@ export default function Members() {
               <button className={`btn btn-sm ${m.suspended ? '' : 'btn-danger'}`} onClick={() => toggleSuspend(m)}>
                 <Icon name={m.suspended ? 'check' : 'block'} size={14} />
                 {m.suspended ? t('unsuspend', lang) : t('suspend', lang)}
+              </button>
+            </div>
+          )}
+
+          {!adjust && members.filter((x) => x.id !== m.id).length > 0 && (
+            <div className="card-flat pad-3 mt-3">
+              <label className="label">{t('mergeFrom', lang)}</label>
+              <p className="tiny mt-1">{t('mergePick', lang)}</p>
+              <select className="select mt-2" value={mergeFrom} onChange={(e) => setMergeFrom(e.target.value)}>
+                <option value="">—</option>
+                {members.filter((x) => x.id !== m.id).map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name} · {x.channel} · {x.stamps}/10 · {x.id}
+                  </option>
+                ))}
+              </select>
+              <button className="btn btn-sm btn-pine mt-2" disabled={!mergeFrom || mergeBusy}
+                onClick={async () => {
+                  if (!confirm(t('mergeConfirm', lang))) return
+                  setMergeBusy(true)
+                  const r = await adminMergeMembers(mergeFrom, m.id)
+                  setMergeBusy(false)
+                  if (r?.error) {
+                    alert(lang === 'th' ? 'ย้ายไม่สำเร็จ' : 'Merge failed')
+                    return
+                  }
+                  setMergeFrom('')
+                  alert(t('mergeOk', lang))
+                }}>
+                {t('mergeNow', lang)}
               </button>
             </div>
           )}

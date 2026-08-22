@@ -6,7 +6,7 @@ import {
 } from 'firebase/auth'
 import {
   collection, doc, getDoc, getDocs, onSnapshot,
-  setDoc, updateDoc, deleteDoc, writeBatch,
+  setDoc, updateDoc, deleteDoc, writeBatch, query, where,
 } from 'firebase/firestore'
 import { auth, db, firebaseReady } from './firebase.js'
 import {
@@ -512,6 +512,43 @@ export function StoreProvider({ children }) {
     await logAdmin(`Adjust stamps ${delta > 0 ? '+' : ''}${delta} for ${userId} — ${reason}`)
   }, [addStamp, logAdmin])
 
+  // Move bookings / codes / stamps from one member onto another (LINE channel switch).
+  const adminMergeMembers = useCallback(async (fromId, intoId) => {
+    if (!fromId || !intoId || fromId === intoId) return { error: 'same' }
+    const from = members.find((m) => m.id === fromId)
+    const into = members.find((m) => m.id === intoId)
+    if (!from || !into) return { error: 'notfound' }
+
+    const retarget = async (col) => {
+      const snap = await getDocs(query(collection(db, col), where('userId', '==', fromId)))
+      if (snap.empty) return
+      const batch = writeBatch(db)
+      snap.docs.forEach((d) => batch.update(d.ref, { userId: intoId }))
+      await batch.commit()
+    }
+    await retarget('bookings')
+    await retarget('vouchers')
+    await retarget('stampLog')
+
+    const batch = writeBatch(db)
+    let stamps = (into.stamps || 0) + (from.stamps || 0)
+    let earned = 0
+    while (stamps >= 10) { stamps -= 10; earned += 1 }
+    batch.update(doc(db, 'members', intoId), {
+      stamps,
+      bookingsYear: (into.bookingsYear || 0) + (from.bookingsYear || 0),
+    })
+    for (let k = 0; k < earned; k += 1) {
+      batch.set(doc(db, 'vouchers', nid('v')), {
+        userId: intoId, issued: todayISO(), expiry: null, used: false, source: 'stamps',
+      })
+    }
+    batch.delete(doc(db, 'members', fromId))
+    await batch.commit()
+    await logAdmin(`Merge member ${from.name} (${fromId}) → ${into.name} (${intoId})`)
+    return { ok: true }
+  }, [members, logAdmin])
+
   const value = {
     lang, switchLang, firebaseReady, authReady,
     courts, members, bookings, vouchers, stampLog, settings, adminLog,
@@ -521,7 +558,7 @@ export function StoreProvider({ children }) {
     registerEmail, loginEmail, requestReset, resendVerification,
     notifications, notify, markNotifsRead,
     slotStatus, createMultiBooking, cancelBooking,
-    adminAdjustStamps, adminCreateMultiBooking,
+    adminAdjustStamps, adminCreateMultiBooking, adminMergeMembers,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

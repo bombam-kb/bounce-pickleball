@@ -75,6 +75,50 @@ function todayISO() {
   return `${y}-${m}-${day}`
 }
 
+async function retargetUserId(db, col, fromId, intoId) {
+  const snap = await db.collection(col).where('userId', '==', fromId).get()
+  if (snap.empty) return 0
+  const docs = snap.docs
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = db.batch()
+    docs.slice(i, i + 400).forEach((d) => batch.update(d.ref, { userId: intoId }))
+    await batch.commit()
+  }
+  return docs.length
+}
+
+/** LINE user IDs are unique per Login channel. A new channel looks like a new person. */
+async function adoptLineTwin(db, uid, name) {
+  const n = (name || '').trim()
+  if (!n) return
+  const q = await db.collection('members').where('name', '==', n).get()
+  const twins = q.docs.filter((d) => {
+    if (d.id === uid) return false
+    const ch = d.data()?.channel
+    return ch === 'line' || String(d.id).startsWith('line_')
+  })
+  if (twins.length !== 1) return
+  const fromId = twins[0].id
+  const from = twins[0].data() || {}
+  const intoSnap = await db.collection('members').doc(uid).get()
+  const into = intoSnap.data() || {}
+
+  await retargetUserId(db, 'bookings', fromId, uid)
+  await retargetUserId(db, 'vouchers', fromId, uid)
+  await retargetUserId(db, 'stampLog', fromId, uid)
+
+  const batch = db.batch()
+  let stamps = (into.stamps || 0) + (from.stamps || 0)
+  while (stamps >= 10) stamps -= 10
+  batch.update(db.collection('members').doc(uid), {
+    stamps,
+    bookingsYear: (into.bookingsYear || 0) + (from.bookingsYear || 0),
+    previousMemberIds: [...(into.previousMemberIds || []), fromId],
+  })
+  batch.delete(db.collection('members').doc(fromId))
+  await batch.commit()
+}
+
 /**
  * @param {import('http').IncomingMessage} req
  * @param {import('http').ServerResponse} res
@@ -183,6 +227,10 @@ export async function handleLineExchange(req, res) {
     if (snap.exists && snap.data()?.suspended) {
       send(403, { error: 'suspended' })
       return
+    }
+
+    try { await adoptLineTwin(db, uid, name) } catch (e) {
+      console.error('[line-auth] adopt twin', e)
     }
 
     const firebaseToken = await admin.auth().createCustomToken(uid, {
