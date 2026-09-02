@@ -126,6 +126,9 @@ async function testRules(token, victimVoucherId) {
 
   record(denied(await fsReq(token, 'GET', `/payments/sectest_probe_${STAMP}`)),
     'cannot read the payments / slip audit trail')
+  record(denied(await fsReq(token, 'POST', `/payments?documentId=sectest_pay_${STAMP}`, {
+    fields: fields({ transRef: 'FAKE', status: 'applied', userId: ATTACKER }),
+  })), 'cannot mint a payment record to skip checkout')
 
   record(denied(await fsReq(token, 'POST', `/stampLog?documentId=sectest_s_${STAMP}`, {
     fields: fields({ userId: ATTACKER, date: '2026-01-01', delta: 10, note: 'hack', by: 'system' }),
@@ -327,6 +330,9 @@ async function testApi(token, db, victimVoucherId) {
   record(r.json?.error === 'badredirect', 'LINE exchange rejects an unlisted redirectUri', `got ${r.json?.error}`)
   r = await post('/api/auth/line', { redirectUri: 'http://localhost:5173/auth/line/callback' })
   record(r.json?.error === 'badrequest', 'LINE exchange rejects a missing code', `got ${r.json?.error}`)
+  r = await post('/api/auth/line', { code: 'not-a-real-code', redirectUri: 'http://localhost:5173/auth/line/callback' })
+  record(r.json?.error === 'line_token' || r.json?.error === 'badrequest',
+    'LINE exchange accepts the localhost callback origin', `got ${r.json?.error}`)
 
   const stray = await db.collection('bookings').where('userId', '==', ATTACKER).get()
   record(stray.empty, 'no booking was created by any of the above', stray.empty ? '' : `${stray.size} leaked!`)
@@ -398,6 +404,22 @@ async function testPayConfig(db, token) {
     publicSettings.status === 200 ? '' : `status ${publicSettings.status}`)
 }
 
+function testReceiverMask() {
+  console.log('\nSlip receiver matching (KBank mask)\n')
+  const matches = (shopNo, slipReceiver) => {
+    const e = String(shopNo || '').replace(/\D/g, '')
+    const f = String(slipReceiver || '').replace(/\D/g, '')
+    if (e.length < 4 || f.length < 4) return false
+    return e.includes(f) || f.includes(e) || f.includes(e.slice(-4))
+  }
+  record(matches('2373211322', 'xxx-x-x1132-x'),
+    'KBank mask window 1132 matches shop account 2373211322')
+  record(matches('2373211322', 'xxx-x-x1322-x'),
+    'last-4 mask 1322 still matches')
+  record(!matches('2373211322', 'xxx-x-x9999-x'),
+    'a 4-digit window that is not in the shop account is rejected')
+}
+
 function testGitHygiene() {
   console.log('\nTracked files (web API key / secrets)\n')
   const git = (args) => {
@@ -405,7 +427,8 @@ function testGitHygiene() {
   }
   record(!git(['ls-files', 'dist']),
     'dist/ is not tracked (built JS inlines the Firebase web API key)')
-  record(!git(['grep', '-I', '-l', 'BEGIN PRIVATE KEY']),
+  const pemMarker = ['BEGIN', 'PRIVATE', 'KEY'].join(' ')
+  record(!git(['grep', '-I', '-l', pemMarker]),
     'no private keys in tracked files')
   const liveKey = git(['grep', '-I', '-E', 'AIzaSy[0-9A-Za-z_-]{30,}'])
   record(!liveKey, 'no live Firebase web API key in tracked files',
@@ -440,6 +463,7 @@ async function main() {
     await testSignup()
     await testStaffStillWorks(db)
     await testPayConfig(db, token)
+    await testReceiverMask()
     await testGitHygiene()
     if (API_BASE) await testApi(token, db, victimVoucherId)
     else console.log('\n  skip  checkout API — pass --api=http://localhost:5173 to include it\n')

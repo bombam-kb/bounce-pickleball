@@ -5,11 +5,18 @@ export const iso = (d) => {
   const z = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`
 }
-export const todayISO = () => iso(new Date())
+
+const BKK = 'Asia/Bangkok'
+
+/** Calendar date in Thailand, including on Vercel (UTC) servers. */
+export const todayISO = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: BKK }).format(new Date())
+
 export const addDays = (base, n) => {
-  const d = new Date(base + 'T00:00:00')
-  d.setDate(d.getDate() + n)
-  return iso(d)
+  const [y, m, d] = String(base).split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d + n))
+  const z = (n) => String(n).padStart(2, '0')
+  return `${dt.getUTCFullYear()}-${z(dt.getUTCMonth() + 1)}-${z(dt.getUTCDate())}`
 }
 const T = todayISO()
 
@@ -17,9 +24,13 @@ export const genRef = () => 'BNC-' + Math.random().toString(36).slice(2, 8).toUp
 
 // local datetime "YYYY-MM-DDTHH:mm" (not UTC — display is Thailand-local)
 export const nowLocalISO = () => {
-  const d = new Date()
-  const z = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: BKK,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date())
+  const g = (t) => parts.find((p) => p.type === t)?.value || '00'
+  return `${g('year')}-${g('month')}-${g('day')}T${g('hour')}:${g('minute')}`
 }
 
 /** Bookings / cart rows: date, then hour, then court column order. */

@@ -36,10 +36,23 @@ const httpError = (status, code, extra = {}) =>
 
 /** "2026-09-02" + 730 days → "2028-09-01" */
 function addDaysISO(dateISO, days) {
-  const d = new Date(`${dateISO}T00:00:00`)
-  d.setDate(d.getDate() + days)
+  const [y, m, d] = String(dateISO).split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d + days))
   const z = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`
+  return `${dt.getUTCFullYear()}-${z(dt.getUTCMonth() + 1)}-${z(dt.getUTCDate())}`
+}
+
+/** Slot must still be in the future and inside the shop's booking window (Thailand time). */
+function slotInWindow(item, settings) {
+  const hh = String(item.hour).padStart(2, '0')
+  const slot = Date.parse(`${item.date}T${hh}:00:00+07:00`)
+  if (!Number.isFinite(slot) || slot <= Date.now()) return false
+  const days = Number(settings.advanceBookingDays)
+  if (Number.isFinite(days) && days > 0) {
+    const last = addDaysISO(todayISO(), days - 1)
+    if (item.date > last) return false
+  }
+  return true
 }
 
 function normalizeItems(raw) {
@@ -69,20 +82,6 @@ function dataUrlToBase64(image) {
   if (m) return m[2].replace(/\s/g, '')
   if (/^[A-Za-z0-9+/=\s]+$/.test(s) && s.length > 80) return s.replace(/\s/g, '')
   return ''
-}
-
-/** Slot must still be in the future and inside the shop's booking window. */
-function slotInWindow(item, settings) {
-  const now = new Date()
-  const slot = new Date(`${item.date}T00:00:00`)
-  slot.setHours(item.hour)
-  if (slot <= now) return false
-  const days = Number(settings.advanceBookingDays)
-  if (Number.isFinite(days) && days > 0) {
-    const last = addDaysISO(todayISO(), days - 1)
-    if (item.date > last) return false
-  }
-  return true
 }
 
 function digitRuns(value, out = []) {
