@@ -91,7 +91,7 @@ export const DICT = {
   slipPreparing: { th: 'กำลังเตรียมรูป…', en: 'Preparing photo…' },
   slipErr_auth: { th: 'กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง', en: 'Please log in again and retry' },
   slipErr_notconfigured: { th: 'ร้านยังไม่ได้ตั้งค่าตรวจสลิป — ติดต่อพนักงาน', en: 'Slip check is not set up yet — ask staff' },
-  slipErr_1012: { th: 'สลิปนี้เคยใช้ไปแล้ว', en: 'This slip was already used' },
+  slipErr_1012: { th: 'สลิปนี้เคยใช้จองไปแล้ว — ถ้ายังไม่ติดรายการ แจ้งพนักงานพร้อมเลขอ้างอิงบนสลิป', en: 'This slip was already used — if no booking appeared, tell staff the slip reference' },
   slipErr_1013: { th: 'ยอดในสลิปไม่ตรงกับยอดที่ต้องชำระ', en: 'Slip amount does not match' },
   slipErr_1014: { th: 'โอนไม่ตรงบัญชีร้าน', en: 'Paid to the wrong account' },
   slipErr_1010: { th: 'สลิปใหม่มาก — รอสักครู่แล้วอัปโหลดอีกครั้ง', en: 'Slip is too new — wait a moment and retry' },

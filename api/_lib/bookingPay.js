@@ -96,12 +96,10 @@ function digitRuns(value, out = []) {
 }
 
 /**
- * SlipOK masks the receiver account ("xxx-x-x1322-x"), so the strongest check
- * available is that the shop's last 4 digits appear somewhere in it.
- *
- * Throws rather than returning false when the shop account is not configured:
- * a money check that silently passes when misconfigured is worse than a shop
- * that cannot take payments until an admin fills in the account number.
+ * SlipOK masks KBank accounts as "xxx-x-x1132-x". The visible 4 digits are a
+ * window inside the account, not always the last 4 (2373211322 → last-4 1322,
+ * mask 1132). Match if the shop number contains that window, or the slip
+ * contains the shop number / its last 4.
  */
 function assertReceiverIsShop(data, settings) {
   const expected = [settings.payAccountNo, settings.promptPayId]
@@ -113,12 +111,33 @@ function assertReceiverIsShop(data, settings) {
   }
   const found = digitRuns(data?.receiver)
   if (!found.length) {
-    // provider gave us no receiver to compare — record it, don't guess
     console.warn('[pay] SlipOK returned no receiver details; account not verified')
     return
   }
-  if (!expected.some((e) => found.some((f) => f.includes(e.slice(-4))))) {
-    throw httpError(400, 'receiver_mismatch')
+  const ok = expected.some((e) => found.some((f) => {
+    if (f.length < 4) return false
+    if (e.includes(f) || f.includes(e)) return true
+    return f.includes(e.slice(-4))
+  }))
+  if (!ok) throw httpError(400, 'receiver_mismatch')
+}
+
+function paymentFromSlipOk(data, amount, settings) {
+  const transRef = String(data.transRef || '').trim()
+  if (!/^[A-Za-z0-9_-]{6,80}$/.test(transRef)) {
+    console.error('[pay] unusable transRef from SlipOK:', JSON.stringify(transRef).slice(0, 100))
+    throw httpError(400, 'slip_failed')
+  }
+  const paid = Number(data.amount)
+  if (!Number.isFinite(paid) || paid + 0.01 < amount) throw httpError(400, '1013')
+  assertReceiverIsShop(data, settings)
+  return {
+    transRef,
+    amount: paid,
+    paidAt: String(data.transDate || '') + (data.transTime ? ` ${data.transTime}` : ''),
+    sender: String(data.sender?.displayName || data.sender?.name || '').slice(0, 80),
+    receiver: String(data.receiver?.displayName || data.receiver?.name || '').slice(0, 80),
+    receivingBank: String(data.receivingBank || '').slice(0, 20),
   }
 }
 
@@ -139,31 +158,17 @@ async function verifySlipWithSlipOk({ base64, amount, settings }) {
     throw httpError(502, 'slip_network')
   }
   const json = await res.json().catch(() => ({}))
-  if (!res.ok || json.success !== true) {
-    throw httpError(400, json.code != null ? String(json.code) : 'slip_failed', { message: json.message || '' })
-  }
-
   const data = json.data || {}
-  const transRef = String(data.transRef || '').trim()
-  // this becomes a Firestore document id, and the id *is* the replay guard —
-  // a value with a slash would silently write to a nested path instead
-  if (!/^[A-Za-z0-9_-]{6,80}$/.test(transRef)) {
-    console.error('[pay] unusable transRef from SlipOK:', JSON.stringify(transRef).slice(0, 100))
-    throw httpError(400, 'slip_failed')
+  const code = json.code != null ? String(json.code) : ''
+  // 1012 = SlipOK already logged this QR (including a first check we then
+  // rejected). If they still return the slip payload, finish checkout here;
+  // payments/{transRef} is the real one-time lock.
+  if (json.success === true) return paymentFromSlipOk(data, amount, settings)
+  if (code === '1012' && data.transRef) {
+    console.warn('[pay] SlipOK 1012 with payload — completing if we have not booked it')
+    return paymentFromSlipOk(data, amount, settings)
   }
-  // SlipOK also enforces `amount`, but never trust one check with money.
-  const paid = Number(data.amount)
-  if (!Number.isFinite(paid) || paid + 0.01 < amount) throw httpError(400, '1013')
-  assertReceiverIsShop(data, settings)
-
-  return {
-    transRef,
-    amount: paid,
-    paidAt: String(data.transDate || '') + (data.transTime ? ` ${data.transTime}` : ''),
-    sender: String(data.sender?.displayName || data.sender?.name || '').slice(0, 80),
-    receiver: String(data.receiver?.displayName || data.receiver?.name || '').slice(0, 80),
-    receivingBank: String(data.receivingBank || '').slice(0, 20),
-  }
+  throw httpError(400, code || 'slip_failed', { message: json.message || '' })
 }
 
 const slipObjectPath = (transRef, createdAt) =>
