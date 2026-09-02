@@ -5,16 +5,8 @@
       "has": [{ "type": "host", "value": "admin.*" }],
       "destination": "/admin.html"
     },
-    {
-      "source": "/admin",
-      "has": [{ "type": "host", "value": "*.vercel.app" }],
-      "destination": "/admin.html"
-    },
-    {
-      "source": "/admin/:path*",
-      "has": [{ "type": "host", "value": "*.vercel.app" }],
-      "destination": "/admin.html"
-    },
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/admin/:path*", "destination": "/admin.html" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [

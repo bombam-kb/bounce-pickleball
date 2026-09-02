@@ -285,7 +285,7 @@ does not download the staff UI.
 
 1. Project → **Domains** → add `admin.your-domain.com` (same project as the
    customer domain). `vercel.json` already rewrites any `admin.*` host to
-   `admin.html`.
+   `admin.html`. Until then, `/admin` on `*.vercel.app` serves the staff app.
 2. Set Production env vars (Preview can omit them so `/admin` still works on
    `*.vercel.app`):
 
