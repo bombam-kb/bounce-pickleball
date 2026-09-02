@@ -8,7 +8,8 @@
  *   • price comes from `courts`, never from the request
  *   • the amount sent to SlipOK is the server total
  *   • the slip's receiver must be the shop account in `config/settings`
- *   • a slip's `transRef` can be applied to exactly one checkout (payments/{ref})
+ *   • a slip's `transRef` can be applied to exactly one checkout
+ *     (`payments/{ref}` and any live booking with that `slipTransRef`)
  *   • `payMethod` is derived here, so nobody can self-serve a `counter` booking
  *   • a voucher must belong to the caller and still be unused
  *
@@ -151,7 +152,7 @@ async function verifySlipWithSlipOk({ base64, amount, settings }) {
     res = await fetch(`https://api.slipok.com/api/line/apikey/${encodeURIComponent(branchId)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-authorization': apiKey },
-      body: JSON.stringify({ files: base64, log: true, amount }),
+      body: JSON.stringify({ files: base64, log: false, amount }),
     })
   } catch (e) {
     console.error('[pay] slipok unreachable', e)
@@ -160,14 +161,7 @@ async function verifySlipWithSlipOk({ base64, amount, settings }) {
   const json = await res.json().catch(() => ({}))
   const data = json.data || {}
   const code = json.code != null ? String(json.code) : ''
-  // 1012 = SlipOK already logged this QR (including a first check we then
-  // rejected). If they still return the slip payload, finish checkout here;
-  // payments/{transRef} is the real one-time lock.
   if (json.success === true) return paymentFromSlipOk(data, amount, settings)
-  if (code === '1012' && data.transRef) {
-    console.warn('[pay] SlipOK 1012 with payload — completing if we have not booked it')
-    return paymentFromSlipOk(data, amount, settings)
-  }
   throw httpError(400, code || 'slip_failed', { message: json.message || '' })
 }
 
@@ -368,6 +362,12 @@ export async function handleBookingPay(req, res) {
       if (payRef) {
         const paid = await tx.get(payRef)
         if (paid.exists) throw httpError(409, '1012')
+        const used = await tx.get(
+          db.collection('bookings').where('slipTransRef', '==', payment.transRef),
+        )
+        if (used.docs.some((d) => (d.data() || {}).status !== 'cancelled')) {
+          throw httpError(409, '1012')
+        }
       }
       const vRef = voucherId ? db.collection('vouchers').doc(voucherId) : null
       if (vRef) {
