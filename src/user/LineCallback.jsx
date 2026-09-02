@@ -12,6 +12,10 @@ const MSG = {
     suspended: 'บัญชีนี้ถูกระงับ — ติดต่อเจ้าหน้าที่',
     notconfigured: 'ยังไม่ได้ตั้งค่า LINE / Firebase Admin — ดู FIREBASE_SETUP.md',
     line_token: 'แลก token จาก LINE ไม่สำเร็จ — ตรวจ Callback URL',
+    badredirect: 'โดเมนนี้ยังไม่ได้รับอนุญาตให้เข้าสู่ระบบ LINE',
+    line_id_token: 'ยืนยันตัวตนกับ LINE ไม่สำเร็จ — ลองใหม่',
+    line_profile: 'อ่านโปรไฟล์ LINE ไม่สำเร็จ — ลองใหม่',
+    too_many: 'พยายามหลายครั้งเกินไป — ลองใหม่ภายหลัง',
     unknown: 'เกิดข้อผิดพลาด — ลองใหม่อีกครั้ง',
   },
   en: {
@@ -22,6 +26,10 @@ const MSG = {
     suspended: 'Account suspended — contact staff',
     notconfigured: 'LINE / Firebase Admin not configured — see FIREBASE_SETUP.md',
     line_token: 'LINE token exchange failed — check Callback URL',
+    badredirect: 'This domain is not allowed for LINE login',
+    line_id_token: 'LINE identity check failed — try again',
+    line_profile: 'Could not read the LINE profile — try again',
+    too_many: 'Too many attempts — try later',
     unknown: 'Something went wrong — please try again',
   },
 }

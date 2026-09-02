@@ -24,7 +24,27 @@ function todayISO() {
   return `${y}-${m}-${day}`
 }
 
-function allowedRedirectUris() {
+function normalizeOrigin(raw) {
+  const s = String(raw || '').trim().replace(/\/$/, '')
+  if (!s) return ''
+  if (s.startsWith('http://') || s.startsWith('https://')) return s
+  return `https://${s}`
+}
+
+function addOrigin(set, raw) {
+  const o = normalizeOrigin(raw)
+  if (o) set.add(o)
+}
+
+/** Host the browser actually used to call this API (alias, not the unique deploy URL). */
+function requestOrigin(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim() || 'https'
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim()
+  if (!host) return ''
+  return normalizeOrigin(`${proto}://${host}`)
+}
+
+function allowedRedirectUris(req) {
   const origins = new Set([
     'http://localhost:5173',
     'http://localhost:5174',
@@ -33,16 +53,26 @@ function allowedRedirectUris() {
     'http://127.0.0.1:5174',
   ])
   getEnv('LINE_REDIRECT_ORIGINS').split(',').map((s) => s.trim()).filter(Boolean)
-    .forEach((o) => origins.add(o.replace(/\/$/, '')))
-  const pub = getEnv('VITE_PUBLIC_ORIGIN')
-  if (pub) origins.add(pub.replace(/\/$/, ''))
-  const vercel = getEnv('VERCEL_URL')
-  if (vercel) origins.add(vercel.startsWith('http') ? vercel.replace(/\/$/, '') : `https://${vercel}`)
+    .forEach((o) => addOrigin(origins, o))
+  addOrigin(origins, getEnv('VITE_PUBLIC_ORIGIN'))
+  // VERCEL_URL is the unique deploy host, not bounce-pickleball.vercel.app.
+  addOrigin(origins, getEnv('VERCEL_URL'))
+  addOrigin(origins, getEnv('VERCEL_BRANCH_URL'))
+  addOrigin(origins, getEnv('VERCEL_PROJECT_PRODUCTION_URL'))
+  const fromReq = requestOrigin(req)
+  if (fromReq) {
+    try {
+      const host = new URL(fromReq).hostname
+      if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.vercel.app')) {
+        origins.add(fromReq)
+      }
+    } catch { /* ignore */ }
+  }
   return new Set([...origins].map((o) => `${o}/auth/line/callback`))
 }
 
-function pickRedirectUri(requested) {
-  const allow = allowedRedirectUris()
+function pickRedirectUri(requested, req) {
+  const allow = allowedRedirectUris(req)
   if (requested && allow.has(requested)) return requested
   return null
 }
@@ -108,7 +138,7 @@ export async function handleLineExchange(req, res) {
 
   const code = typeof body.code === 'string' ? body.code.trim() : ''
   const requested = typeof body.redirectUri === 'string' ? body.redirectUri.trim() : ''
-  const redirectUri = pickRedirectUri(requested)
+  const redirectUri = pickRedirectUri(requested, req)
   if (!code) { send(400, { error: 'badrequest' }); return }
   if (!redirectUri) { send(400, { error: 'badredirect' }); return }
 

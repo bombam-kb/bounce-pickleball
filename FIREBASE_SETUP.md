@@ -371,8 +371,9 @@ used from anywhere else. This is Firebase's own recommended production step:
 ```
 VITE_LINE_CHANNEL_ID=1234567890
 LINE_CHANNEL_SECRET=your_channel_secret
-# Optional extra origins (comma-separated). localhost:5173–5175 and VERCEL_URL
-# are always on the allowlist; the server ignores any other redirectUri.
+# Optional extra origins (comma-separated). localhost, this request's
+# *.vercel.app host, VERCEL_PROJECT_PRODUCTION_URL, and VERCEL_URL are
+# always allowed; the server ignores any other redirectUri.
 # LINE_REDIRECT_ORIGINS=https://www.your-domain.com
 ```
 
