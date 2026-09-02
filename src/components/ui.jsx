@@ -16,6 +16,7 @@ const PATHS = {
   plus: <path d="M12 5v14M5 12h14" />,
   chevL: <path d="M15 5l-7 7 7 7" />,
   download: <><path d="M12 4v11M7 11l5 5 5-5" /><path d="M4 20h16" /></>,
+  image: <><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.5" /><path d="M21 16l-5.5-5.5L9 17" /></>,
   tag: <><path d="M3 12V4a1 1 0 011-1h8l9 9-9 9-9-9z" /><circle cx="8" cy="8" r="1.6" /></>,
   qr: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><path d="M14 14h3v3h-3zM19 19h2M19 14h2M14 19h1" /></>,
   card: <><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M3 10h18" /></>,
@@ -26,6 +27,7 @@ const PATHS = {
   trend: <><path d="M3 16l5.5-6.5 4 3.5L20 6" /><path d="M15.5 6H20v4.5" /><path d="M3 20h18" /></>,
   cake: <><path d="M4 20h16v-7a2 2 0 00-2-2H6a2 2 0 00-2 2v7z" /><path d="M4 15.5c1.3 1.2 2.7 1.2 4 0s2.7-1.2 4 0 2.7 1.2 4 0 2.7-1.2 4 0" /><path d="M12 8v3M12 5.5a1.2 1.2 0 001.2-1.3C13.2 3 12 2 12 2s-1.2 1-1.2 2.2A1.2 1.2 0 0012 5.5z" /></>,
   coin: <><circle cx="12" cy="12" r="8.5" /><path d="M12 8v8M9.5 10c0-1 1-1.8 2.5-1.8s2.5.7 2.5 1.7c0 2.3-5 1.9-5 4.1 0 1 1 1.8 2.5 1.8s2.5-.8 2.5-1.8" /></>,
+  copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2" /></>,
 }
 
 export const BallImg = ({ size, className = '', style }) => (
@@ -195,14 +197,19 @@ export const hourRangeLabel = (h, durationMin = 60) => {
 }
 
 // ── PDF booking slip — printable window; browsers save via "Save as PDF" ──
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+))
+
 export const printSlip = (b, court, member, lang) => {
   const th = lang === 'th'
   const w = window.open('', '_blank', 'width=420,height=680')
   if (!w) { alert(th ? 'เบราว์เซอร์บล็อกหน้าต่างใหม่ — กรุณาอนุญาต popup' : 'Popup blocked — please allow popups'); return }
   const hourLbl = hourRangeLabel(b.hour, b.duration)
-  const payLabel = { promptpay: 'QR PromptPay', card: th ? 'บัตรเครดิต/เดบิต' : 'Credit/Debit', voucher: th ? 'โค้ดฟรี 1 ชม.' : 'Free hour code', counter: th ? 'จองให้โดยพนักงาน' : 'Booked by staff' }[b.payMethod] || b.payMethod
-  w.document.write(`<!doctype html><html lang="${lang}"><head><meta charset="utf-8">
-<title>${b.ref} — Bounce Pickleball House</title>
+  const payLabel = { promptpay: th ? 'โอนกสิกร' : 'Kasikorn transfer', card: th ? 'บัตรเครดิต/เดบิต' : 'Credit/Debit', voucher: th ? 'โค้ดฟรี 1 ชม.' : 'Free hour code', counter: th ? 'จองให้โดยพนักงาน' : 'Booked by staff' }[b.payMethod] || b.payMethod
+  const courtName = th ? (court?.nameTh ?? '') : (court?.name ?? '')
+  w.document.write(`<!doctype html><html lang="${esc(lang)}"><head><meta charset="utf-8">
+<title>${esc(b.ref)} — Bounce Pickleball House</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@500;700;800&family=Anuphan:wght@400;600&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -226,20 +233,20 @@ export const printSlip = (b, court, member, lang) => {
   .noprint { display: block; margin: 16px auto 0; padding: 10px 24px; font-family: 'Prompt', Tahoma, sans-serif; font-weight: 700; border: 2px solid #101B14; border-radius: 999px; background: #C6F135; cursor: pointer; }
 </style></head><body>
 <div class="slip">
-  <div class="head"><h1><img src="${window.location.origin}/ball.png" width="22" height="22" alt="" /> BOUNCE</h1><small>PICKLEBALL HOUSE</small></div>
-  <div class="ref"><div class="label">${th ? 'หมายเลขการจอง' : 'Booking Reference'}</div><div class="code">${b.ref}</div></div>
+  <div class="head"><h1><img src="${esc(window.location.origin)}/ball.png" width="22" height="22" alt="" /> BOUNCE</h1><small>PICKLEBALL HOUSE</small></div>
+  <div class="ref"><div class="label">${th ? 'หมายเลขการจอง' : 'Booking Reference'}</div><div class="code">${esc(b.ref)}</div></div>
   <div class="rows">
-    <div class="row"><span class="k">${th ? 'ผู้จอง' : 'Customer'}</span><span class="v">${member?.name ?? '—'}</span></div>
-    <div class="row"><span class="k">${th ? 'สนาม' : 'Court'}</span><span class="v">${th ? (court?.nameTh ?? '') : (court?.name ?? '')}</span></div>
-    <div class="row"><span class="k">${th ? 'วันที่' : 'Date'}</span><span class="v">${b.date}</span></div>
-    <div class="row"><span class="k">${th ? 'เวลา' : 'Time'}</span><span class="v">${hourLbl} · ${b.duration} ${th ? 'นาที' : 'min'}</span></div>
-    <div class="row"><span class="k">${th ? 'ชำระโดย' : 'Paid via'}</span><span class="v">${payLabel}</span></div>
-    ${b.discount ? `<div class="row"><span class="k">${th ? 'ส่วนลด' : 'Discount'}</span><span class="v">−฿${b.discount}</span></div>` : ''}
+    <div class="row"><span class="k">${th ? 'ผู้จอง' : 'Customer'}</span><span class="v">${esc(member?.name ?? '—')}</span></div>
+    <div class="row"><span class="k">${th ? 'สนาม' : 'Court'}</span><span class="v">${esc(courtName)}</span></div>
+    <div class="row"><span class="k">${th ? 'วันที่' : 'Date'}</span><span class="v">${esc(b.date)}</span></div>
+    <div class="row"><span class="k">${th ? 'เวลา' : 'Time'}</span><span class="v">${esc(hourLbl)} · ${esc(b.duration)} ${th ? 'นาที' : 'min'}</span></div>
+    <div class="row"><span class="k">${th ? 'ชำระโดย' : 'Paid via'}</span><span class="v">${esc(payLabel)}</span></div>
+    ${b.discount ? `<div class="row"><span class="k">${th ? 'ส่วนลด' : 'Discount'}</span><span class="v">−฿${esc(b.discount)}</span></div>` : ''}
   </div>
-  <div class="total"><span>${th ? 'ยอดชำระ' : 'Total'}</span><span>${b.total === 0 ? (th ? 'ฟรี' : 'FREE') : '฿' + b.total}</span></div>
+  <div class="total"><span>${th ? 'ยอดชำระ' : 'Total'}</span><span>${b.total === 0 ? (th ? 'ฟรี' : 'FREE') : '฿' + esc(b.total)}</span></div>
   <div class="foot">${th ? 'แสดงใบนี้ที่เคาน์เตอร์ก่อนลงสนาม · ขอบคุณที่ใช้บริการ' : 'Show this slip at the counter · Thank you!'}</div>
 </div>
-<button class="noprint">🖨 ${th ? 'พิมพ์ / บันทึกเป็น PDF' : 'Print / Save as PDF'}</button>
+<button class="noprint">${th ? 'พิมพ์ / บันทึกเป็น PDF' : 'Print / Save as PDF'}</button>
 </body></html>`)
   w.document.close()
   // bind from opener — inline onclick would be blocked by CSP (script-src 'self')

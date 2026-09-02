@@ -162,5 +162,13 @@ export const SEED_SETTINGS = {
   slotDuration: 60,
   voucherDays: 90,
   advanceBookingDays: 14,
-  gatewayKey: 'pk_test_••••••••7d2f',
+}
+
+export const SEED_PAYOUT = {
+  // Blank on purpose. The server verifies a slip's receiver against these exact
+  // Firestore values, so a default baked into the bundle would show customers
+  // an account the server cannot confirm. Set them in Admin → Settings.
+  promptPayId: '',
+  payAccountName: '',
+  payAccountNo: '',
 }

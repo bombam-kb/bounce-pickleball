@@ -6,7 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seed": "node scripts/seed.mjs",
+    "unseed": "node scripts/unseed.mjs",
+    "rules:deploy": "node scripts/deployRules.mjs",
+    "check:storage": "node scripts/checkSlipStorage.mjs",
+    "check:security": "node scripts/checkSecurity.mjs",
+    "check:bundles": "node scripts/checkBundles.mjs"
   },
   "dependencies": {
     "firebase": "^12.16.0",

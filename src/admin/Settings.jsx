@@ -11,7 +11,14 @@ export default function Settings() {
   useEffect(() => { setForm(settings) }, [settings])
 
   const save = () => {
-    saveSettings(form)
+    const next = {
+      ...form,
+      promptPayId: String(form.promptPayId || '').replace(/\D/g, ''),
+      payAccountName: String(form.payAccountName || '').trim(),
+      payAccountNo: String(form.payAccountNo || '').replace(/\D/g, ''),
+    }
+    delete next.gatewayKey
+    saveSettings(next)
     logAdmin('Update general settings')
     setSaved(true)
   }
@@ -34,8 +41,25 @@ export default function Settings() {
             </select>
           </div>
           <div>
-            <label className="label">{t('gatewayKey', lang)}</label>
-            <input className="input num" maxLength={80} value={form.gatewayKey} onChange={(e) => set('gatewayKey', e.target.value)} />
+            <label className="label">{t('payAccountNameLabel', lang)}</label>
+            <input className="input" maxLength={80}
+              value={form.payAccountName || ''}
+              onChange={(e) => set('payAccountName', e.target.value)} />
+          </div>
+          <div>
+            <label className="label">{t('payAccountNoLabel', lang)}</label>
+            <input className="input num" type="tel" inputMode="numeric" autoComplete="off"
+              maxLength={20}
+              value={form.payAccountNo || ''}
+              onChange={(e) => set('payAccountNo', e.target.value.replace(/\D/g, ''))} />
+          </div>
+          <div>
+            <label className="label">{t('promptPayIdLabel', lang)}</label>
+            <input className="input num" type="tel" inputMode="numeric" autoComplete="off"
+              maxLength={13} placeholder="0812345678"
+              value={form.promptPayId || ''}
+              onChange={(e) => set('promptPayId', e.target.value.replace(/\D/g, ''))} />
+            <p className="tiny mt-1">{t('promptPayIdHint', lang)}</p>
           </div>
           <button className="btn btn-lime btn-lg" onClick={save}>{t('save', lang)}</button>
           {saved && <span className="chip chip-green">✓ {lang === 'th' ? 'บันทึกแล้ว' : 'Saved'}</span>}

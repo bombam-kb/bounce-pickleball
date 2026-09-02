@@ -1,7 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useStore } from '../store.jsx'
-import { t, fmtDate } from '../i18n.js'
-import { Icon, StatusChip, hourLabel, AvatarGlyph, downloadCSV, usePager, Pager } from '../components/ui.jsx'
+import { t, fmtDate, DICT } from '../i18n.js'
+import { Icon, Modal, StatusChip, hourLabel, AvatarGlyph, downloadCSV, usePager, Pager } from '../components/ui.jsx'
 import BookForCustomerModal from './BookFor.jsx'
 
 // "2026-07-12T21:47" → "อา. 12 ก.ค. · 21:47" (seed data may be date-only)
@@ -9,6 +9,56 @@ const fmtCreated = (iso, lang) => {
   if (!iso) return '—'
   const [d, tm] = iso.split('T')
   return fmtDate(d, lang) + (tm ? ` · ${tm.slice(0, 5)}` : '')
+}
+
+const slipErrKey = (code) => (DICT[`slipErr_${code}`] ? `slipErr_${code}` : 'slipErr_generic')
+
+/**
+ * Payment slips are private personal data: the bucket has no public access, so
+ * this asks the server for a link that expires in minutes, and the server logs
+ * the access. Nothing is prefetched — a slip is only fetched when staff ask.
+ */
+function SlipViewer({ booking, onClose }) {
+  const { lang, fetchSlipUrl } = useStore()
+  const [state, setState] = useState({ loading: true })
+
+  useEffect(() => {
+    let alive = true
+    fetchSlipUrl(booking.id)
+      .then((r) => { if (alive) setState({ url: r.url, transRef: r.transRef, slipExpiresAt: r.slipExpiresAt }) })
+      .catch((e) => { if (alive) setState({ err: t(slipErrKey(e?.code), lang) }) })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booking.id])
+
+  return (
+    <Modal onClose={onClose}>
+      <h3 style={{ fontSize: 18 }}>{t('slipTitle', lang)}</h3>
+      <div className="tiny mt-1">
+        {booking.ref} · {fmtDate(booking.date, lang)} · {hourLabel(booking.hour)} · ฿{booking.total}
+      </div>
+
+      {state.loading && <div className="tc muted mt-4">{t('slipLoading', lang)}</div>}
+      {state.err && (
+        <div className="chip chip-red mt-3" style={{ width: '100%', whiteSpace: 'normal', justifyContent: 'center' }}>
+          {state.err}
+        </div>
+      )}
+      {state.url && (
+        <>
+          <img className="slip-view mt-3" src={state.url} alt={t('slipTitle', lang)} />
+          {state.transRef && (
+            <div className="tiny mt-2">{t('slipTransRefLabel', lang)}: <span className="num">{state.transRef}</span></div>
+          )}
+          {state.slipExpiresAt && (
+            <div className="tiny">{t('slipDeleteOn', lang, { d: fmtDate(state.slipExpiresAt, lang) })}</div>
+          )}
+        </>
+      )}
+
+      <p className="tiny slip-pdpa mt-3">{t('slipPdpaNote', lang)}</p>
+    </Modal>
+  )
 }
 
 export default function Bookings() {
@@ -20,6 +70,7 @@ export default function Bookings() {
   const [fCreatedDate, setFCreatedDate] = useState('') // วันที่ทำรายการ (transaction date)
   const [sort, setSort] = useState({ key: 'slot', dir: 'desc' })
   const [bookForOpen, setBookForOpen] = useState(false)
+  const [slipFor, setSlipFor] = useState(null)
 
   const memberName = (b) => members.find((x) => x.id === b.userId)?.name ?? ''
   const courtName = (b) => {
@@ -55,10 +106,10 @@ export default function Bookings() {
 
   const exportCsv = () => {
     downloadCSV('bounce-bookings.csv', [
-      ['Ref', 'Customer', 'Court', 'Slot Date', 'Slot Time', 'Duration', 'Created At', 'Price', 'Discount', 'Total', 'Payment', 'Status'],
+      ['Ref', 'Customer', 'Court', 'Slot Date', 'Slot Time', 'Duration', 'Created At', 'Price', 'Discount', 'Total', 'Payment', 'Slip Ref', 'Status'],
       ...rows.map((b) => {
         const c = courts.find((x) => x.id === b.courtId)
-        return [b.ref, memberName(b), c?.name, b.date, hourLabel(b.hour), b.duration, b.createdAt, b.price, b.discount, b.total, b.payMethod, b.status]
+        return [b.ref, memberName(b), c?.name, b.date, hourLabel(b.hour), b.duration, b.createdAt, b.price, b.discount, b.total, b.payMethod, b.slipTransRef ?? '', b.status]
       }),
     ])
     logAdmin('Export bookings CSV')
@@ -127,6 +178,7 @@ export default function Bookings() {
               <Th k="status">{t('status', lang)}</Th>
               <Th k="created">{t('createdAtCol', lang)}</Th>
               <Th k="ref">Ref</Th>
+              <th>{t('slipCol', lang)}</th>
               <th></th>
             </tr></thead>
             <tbody>
@@ -142,6 +194,14 @@ export default function Bookings() {
                     <td className="tiny" style={{ whiteSpace: 'nowrap' }}>{fmtCreated(b.createdAt, lang)}</td>
                     <td className="num">{b.ref}</td>
                     <td>
+                      {b.slipPath ? (
+                        <button className="btn btn-sm btn-ghost" onClick={() => setSlipFor(b)}
+                          title={t('viewSlip', lang)}>
+                          <Icon name="image" size={13} /> {t('viewSlip', lang)}
+                        </button>
+                      ) : <span className="muted">—</span>}
+                    </td>
+                    <td>
                       {b.status === 'upcoming' && (
                         <button className="btn btn-sm btn-danger"
                           onClick={() => confirm(`${t('cancelBooking', lang)} ${b.ref}?`) && (cancelBooking(b.id, 'admin'), logAdmin(`Cancel ${b.ref} (manual override)`))}>
@@ -152,14 +212,19 @@ export default function Bookings() {
                   </tr>
                 )
               })}
-              {rows.length === 0 && <tr><td colSpan={8} className="tc muted">—</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={9} className="tc muted">—</td></tr>}
             </tbody>
           </table>
         </div>
         <Pager {...pager} lang={lang} />
       </div>
 
+      <p className="tiny slip-pdpa mt-3">
+        <Icon name="image" size={13} /> {t('slipRetentionHint', lang)}
+      </p>
+
       {bookForOpen && <BookForCustomerModal onClose={() => setBookForOpen(false)} />}
+      {slipFor && <SlipViewer booking={slipFor} onClose={() => setSlipFor(null)} />}
     </div>
   )
 }

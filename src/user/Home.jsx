@@ -6,7 +6,7 @@ import { todayISO, addDays, isPeak, sortSlotItems } from '../data/index.js'
 import { Icon, CalendarModal } from '../components/ui.jsx'
 
 export default function Home({ onCheckout, cartHost }) {
-  const { lang, courts, slotStatus, settings } = useStore()
+  const { lang, courts, slotStatus, loadTakenSlots, settings } = useStore()
   const [date, setDate] = useState(todayISO())
   const [calOpen, setCalOpen] = useState(false)
   const [selected, setSelected] = useState([]) // [{ courtId, hour }]
@@ -15,6 +15,16 @@ export default function Home({ onCheckout, cartHost }) {
 
   // switching date starts a fresh selection for that day
   useEffect(() => { setSelected([]) }, [date])
+
+  // who booked what is not ours to read, so ask the server which slots on this
+  // day are gone. Re-checked when the tab regains focus so a slot someone else
+  // took while we were away doesn't still look free.
+  useEffect(() => {
+    loadTakenSlots([date])
+    const onFocus = () => loadTakenSlots([date])
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [date, loadTakenSlots])
 
   const activeCourts = courts.filter((c) => c.active)
   const openHour = activeCourts.length ? Math.min(...activeCourts.map((c) => c.open)) : 0

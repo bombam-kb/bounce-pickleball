@@ -14,7 +14,6 @@ React 18 + Vite 6, pure CSS design system, mock data (ยังไม่มี b
 - **localStorage hardening**: JSON.parse ใน try/catch + ตรวจ shape ก่อนใช้ (ข้อมูลเสีย/ถูกแก้ → fallback เป็น seed)
 - **Input caps**: maxLength ทุกช่องข้อความ, clamp ค่าติดลบในช่องตัวเลข
 - ไม่มี `dangerouslySetInnerHTML` / `eval` / `innerHTML` — React escape ทุก output โดย default
-- ⚠️ **ข้อจำกัดโดยธรรมชาติของ demo**: รหัส Admin (`bounce`) อยู่ฝั่ง client — เมื่อต่อ backend จริงต้องย้าย auth ไป server-side ทั้งหมด (JWT/session), Payment Gateway key ในหน้าตั้งค่าเป็น mock
 
 ## รันโปรเจค
 
@@ -29,7 +28,7 @@ npm run build    # production build → dist/
 | ฝั่ง | URL | หมายเหตุ |
 |---|---|---|
 | **ลูกค้า (จองสนาม)** | `/` | mobile-first, bottom nav |
-| **Admin (พนักงาน)** | `/admin` | รหัสผ่าน demo: `bounce` |
+| **Admin (พนักงาน)** | `/admin` บนเครื่อง · `admin.<โดเมน>` บน production | บัญชีในคอลเลกชัน `admins` |
 
 ## ฟีเจอร์ตาม SRS
 
@@ -41,7 +40,7 @@ npm run build    # production build → dist/
 - My Membership: Stamp Card 10 ช่อง (ครบ 10 ออก Free Voucher อัตโนมัติ + คืนแสตมป์เมื่อยกเลิก), ระดับสมาชิก Bronze/Silver/Gold + progress bar, ประวัติแสตมป์
 - สลับภาษา TH/EN ทุกหน้า
 
-**ฝั่ง Admin** (`/admin`)
+**ฝั่ง Admin** (`/admin` บนเครื่อง · `admin.<โดเมน>` บน production)
 - Dashboard: ยอดจองวันนี้/สัปดาห์/เดือน, กราฟรายได้ 7 วัน, สถานะสนาม real-time, การจองที่กำลังมาถึง
 - จัดการสนาม: เพิ่ม/แก้ไข/ลบ, ราคา Peak/Off-Peak, เวลาเปิด-ปิด, Block เวลาซ่อมบำรุง, Open Court toggle
 - จัดการการจอง: ค้นหา/กรอง, ยกเลิกแทนลูกค้า, Export CSV
@@ -53,7 +52,8 @@ npm run build    # production build → dist/
 
 ```
 src/
-├── App.jsx          # แยก 2 ฝั่งตาม path (/ กับ /admin)
+├── App.jsx          # ฝั่งลูกค้าเท่านั้น (ไม่ import admin)
+├── origins.js       # แยกโฮสต์ลูกค้า / พนักงาน
 ├── store.jsx        # React Context: state + business logic ทั้งหมด
 ├── i18n.js          # dictionary TH/EN
 ├── index.css        # design system (Sporty Club: cream/pine/lime)
@@ -61,6 +61,7 @@ src/
 ├── components/ui.jsx
 ├── user/            # UserApp, Home, Booking, MyBookings, Membership, Login
 └── admin/           # AdminApp, Dashboard, Courts, Bookings, Promos, Members, Settings
+admin.html           # จุดเข้าฝั่งพนักงาน (โดเมนแยกใน production)
 ```
 
 ## Phase 2–3 ที่ทำแล้ว (demo-grade)

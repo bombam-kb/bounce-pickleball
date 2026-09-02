@@ -1,11 +1,10 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react'
+import React, { useEffect, Suspense, lazy } from 'react'
 import { StoreProvider } from './store.jsx'
 import { firebaseReady } from './firebase.js'
 import Logo from './components/Logo.jsx'
+import { goAdminSite, adminOrigin } from './origins.js'
 
-// code-split: customers never download the admin bundle (and vice versa)
 const UserApp = lazy(() => import('./user/UserApp.jsx'))
-const AdminApp = lazy(() => import('./admin/AdminApp.jsx'))
 const LineCallback = lazy(() => import('./user/LineCallback.jsx'))
 
 const Loading = () => (
@@ -16,24 +15,20 @@ const Loading = () => (
 
 const isLineCallback = () => window.location.pathname === '/auth/line/callback'
 
-// Two-sided app: customer site at "/", staff panel at "/admin"
-export default function App() {
-  const [side, setSide] = useState(window.location.pathname.startsWith('/admin') ? 'admin' : 'user')
-  const [lineCb, setLineCb] = useState(isLineCallback)
+/**
+ * Customer origin only. Staff UI is a separate entry (`admin.html`) served on
+ * the admin host — this file must never import `src/admin/*`.
+ */
+export default function CustomerApp() {
+  const staffPath = window.location.pathname === '/admin'
+    || window.location.pathname.startsWith('/admin/')
+  const sendToStaffOrigin = staffPath && adminOrigin() !== window.location.origin
 
-  const go = (s) => {
-    window.history.pushState({}, '', s === 'admin' ? '/admin' : '/')
-    setSide(s)
-    setLineCb(false)
-  }
   useEffect(() => {
-    const onPop = () => {
-      setLineCb(isLineCallback())
-      setSide(window.location.pathname.startsWith('/admin') ? 'admin' : 'user')
-    }
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
-  }, [])
+    if (sendToStaffOrigin) goAdminSite()
+  }, [sendToStaffOrigin])
+
+  if (sendToStaffOrigin) return null
 
   return (
     <StoreProvider>
@@ -47,13 +42,7 @@ export default function App() {
         </div>
       )}
       <Suspense fallback={<Loading />}>
-        {lineCb ? (
-          <LineCallback />
-        ) : side === 'admin' ? (
-          <AdminApp goUser={() => go('user')} />
-        ) : (
-          <UserApp />
-        )}
+        {isLineCallback() ? <LineCallback /> : <UserApp />}
       </Suspense>
     </StoreProvider>
   )

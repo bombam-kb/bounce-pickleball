@@ -10,8 +10,7 @@ import {
 } from 'firebase/firestore'
 import { auth, db, firebaseReady } from './firebase.js'
 import {
-  COURTS, MEMBERS, SEED_BOOKINGS, SEED_VOUCHERS,
-  SEED_STAMP_LOG, SEED_SETTINGS, genRef, todayISO, isPeak, nowLocalISO, sortSlotItems,
+  genRef, todayISO, isPeak, nowLocalISO, sortSlotItems, SEED_SETTINGS, SEED_PAYOUT,
 } from './data/index.js'
 
 const Ctx = createContext(null)
@@ -38,22 +37,6 @@ const mapAuthError = (e) => {
   }
 }
 
-// ── one-time seed: if the database is empty, push the demo dataset ──────────
-const SEED_COLLECTIONS = {
-  courts: COURTS, members: MEMBERS, bookings: SEED_BOOKINGS,
-  vouchers: SEED_VOUCHERS, stampLog: SEED_STAMP_LOG,
-}
-async function seedIfEmpty() {
-  const snap = await getDocs(collection(db, 'courts'))
-  if (!snap.empty) return
-  const batch = writeBatch(db)
-  for (const [col, rows] of Object.entries(SEED_COLLECTIONS)) {
-    rows.forEach((row) => batch.set(doc(db, col, row.id), stripId(row)))
-  }
-  batch.set(doc(db, 'config', 'settings'), SEED_SETTINGS)
-  await batch.commit()
-}
-
 export function StoreProvider({ children }) {
   const [lang, setLang] = useState(() => localStorage.getItem('bounce_lang') || 'th')
 
@@ -63,8 +46,11 @@ export function StoreProvider({ children }) {
   const [bookings, setBookings] = useState([])
   const [vouchers, setVouchers] = useState([])
   const [stampLog, setStampLog] = useState([])
-  const [settings, setSettingsState] = useState(SEED_SETTINGS)
+  const [settings, setSettingsState] = useState({ ...SEED_SETTINGS, ...SEED_PAYOUT })
   const [adminLog, setAdminLog] = useState([])
+  // `${courtId}|${date}|${hour}` of slots booked by anyone, from
+  // /api/slots/taken — customers can no longer read others' bookings
+  const [takenSlots, setTakenSlots] = useState(() => new Set())
 
   // ── session / device state (not business data → kept local) ──
   const [user, setUser] = useState(null)          // logged-in member
@@ -83,44 +69,98 @@ export function StoreProvider({ children }) {
   const errLog = (name) => (e) => console.error(`[Bounce] ${name} listener`, e)
 
   // ── public catalog (courts, settings): readable without auth, so
-  //    subscribe once on mount. Also runs the one-time seed check. ──
+  //    subscribe once on mount. Demo data is loaded with `npm run seed`. ──
   useEffect(() => {
     if (!firebaseReady) { setAuthReady(true); return }
     const unsubs = []
-    let cancelled = false
-    ;(async () => {
-      try { await seedIfEmpty() } catch (e) { console.error('[Bounce] seed check failed', e) }
-      if (cancelled) return
-      unsubs.push(onSnapshot(collection(db, 'courts'),
-        (s) => setCourts(rowsOf(s, (a, b) => (a.id < b.id ? -1 : 1))), errLog('courts')))
-      unsubs.push(onSnapshot(doc(db, 'config', 'settings'),
-        (d) => { if (d.exists()) setSettingsState({ ...SEED_SETTINGS, ...d.data() }) }, errLog('settings')))
-    })()
-    return () => { cancelled = true; unsubs.forEach((u) => u && u()) }
+    unsubs.push(onSnapshot(collection(db, 'courts'),
+      (s) => setCourts(rowsOf(s, (a, b) => (a.id < b.id ? -1 : 1))), errLog('courts')))
+    unsubs.push(onSnapshot(doc(db, 'config', 'settings'),
+      (d) => {
+        if (!d.exists()) return
+        const data = { ...d.data() }
+        // payout fields live on config/payout (auth-only). Ignore them if an
+        // old settings doc still carries them so they never sit in the public
+        // catalog listener.
+        delete data.payAccountName
+        delete data.payAccountNo
+        delete data.promptPayId
+        setSettingsState((prev) => ({
+          ...SEED_SETTINGS,
+          ...SEED_PAYOUT,
+          ...data,
+          payAccountName: prev.payAccountName,
+          payAccountNo: prev.payAccountNo,
+          promptPayId: prev.promptPayId,
+        }))
+      }, errLog('settings')))
+    return () => unsubs.forEach((u) => u && u())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── private collections (members, bookings, vouchers, stampLog, adminLog):
   //    require auth to read, so (re)subscribe whenever the signed-in user
   //    changes. Attaching before login would hit PERMISSION_DENIED and never
-  //    recover — leaving these empty even after logging in. ──
+  //    recover — leaving these empty even after logging in.
+  //
+  //    Customers only get their own rows: Firestore rules reject anything
+  //    wider, and a whole-collection listener would leak every member's name,
+  //    phone and booking history to anyone who opened DevTools. Staff still
+  //    need the full picture, so the subscription shape follows the role and
+  //    re-attaches when `isAdmin` resolves. ──
   useEffect(() => {
     if (!firebaseReady) return
     if (!authUid) {
       setMembers([]); setBookings([]); setVouchers([]); setStampLog([]); setAdminLog([])
+      setTakenSlots(new Set())
+      setSettingsState((prev) => ({ ...prev, ...SEED_PAYOUT }))
       return
     }
     const byDateDesc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)
+    const mine = (name) => query(collection(db, name), where('userId', '==', authUid))
+
+    if (!isAdmin) {
+      setAdminLog([])
+      const unsubs = [
+        onSnapshot(doc(db, 'members', authUid),
+          (d) => setMembers(d.exists() ? [{ id: d.id, ...d.data() }] : []), errLog('members')),
+        onSnapshot(mine('bookings'), (s) => setBookings(rowsOf(s)), errLog('bookings')),
+        onSnapshot(mine('vouchers'), (s) => setVouchers(rowsOf(s, byDateDesc)), errLog('vouchers')),
+        onSnapshot(mine('stampLog'), (s) => setStampLog(rowsOf(s, byDateDesc)), errLog('stampLog')),
+        onSnapshot(doc(db, 'config', 'payout'),
+          (d) => {
+            const p = d.exists() ? (d.data() || {}) : {}
+            setSettingsState((prev) => ({
+              ...prev,
+              payAccountName: String(p.payAccountName || ''),
+              payAccountNo: String(p.payAccountNo || ''),
+              promptPayId: String(p.promptPayId || ''),
+            }))
+          }, errLog('payout')),
+      ]
+      return () => unsubs.forEach((u) => u && u())
+    }
+
     const unsubs = [
       onSnapshot(collection(db, 'members'), (s) => setMembers(rowsOf(s)), errLog('members')),
       onSnapshot(collection(db, 'bookings'), (s) => setBookings(rowsOf(s)), errLog('bookings')),
       onSnapshot(collection(db, 'vouchers'), (s) => setVouchers(rowsOf(s, byDateDesc)), errLog('vouchers')),
       onSnapshot(collection(db, 'stampLog'), (s) => setStampLog(rowsOf(s, byDateDesc)), errLog('stampLog')),
       onSnapshot(collection(db, 'adminLog'), (s) => setAdminLog(rowsOf(s)), errLog('adminLog')),
+      onSnapshot(doc(db, 'config', 'payout'),
+        (d) => {
+          const p = d.exists() ? (d.data() || {}) : {}
+          setSettingsState((prev) => ({
+            ...prev,
+            payAccountName: String(p.payAccountName || ''),
+            payAccountNo: String(p.payAccountNo || ''),
+            promptPayId: String(p.promptPayId || ''),
+          }))
+        }, errLog('payout')),
     ]
     return () => unsubs.forEach((u) => u && u())
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUid])
+  }, [authUid, isAdmin])
 
   // auth session → determine staff vs customer, resolve member doc into `user`
   useEffect(() => {
@@ -144,8 +184,12 @@ export function StoreProvider({ children }) {
           } else {
             try {
               const snap = await getDoc(doc(db, 'members', fbUser.uid))
-              if (snap.exists()) setUser({ id: snap.id, ...snap.data() })
-              else setUser(null)
+              if (snap.exists() && snap.data()?.suspended) {
+                await signOut(auth)
+                setUser(null)
+              } else if (snap.exists()) {
+                setUser({ id: snap.id, ...snap.data() })
+              } else setUser(null)
             } catch (e) { console.error('[Bounce] load member', e) }
           }
         }
@@ -158,11 +202,18 @@ export function StoreProvider({ children }) {
     return unsub
   }, [])
 
-  // keep the logged-in user's stamps/bookings live as members updates
+  // keep the logged-in user's stamps/bookings live as members updates;
+  // also drop the session the moment staff flip `suspended` on a live user
   useEffect(() => {
     if (!user) return
     const fresh = members.find((m) => m.id === user.id)
-    if (fresh) setUser((u) => ({ ...u, ...fresh }))
+    if (!fresh) return
+    if (fresh.suspended) {
+      signOut(auth).catch(() => {})
+      setUser(null)
+      return
+    }
+    setUser((u) => ({ ...u, ...fresh }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members])
 
@@ -296,6 +347,61 @@ export function StoreProvider({ children }) {
     }
   }, [])
 
+  // ── authenticated call to our own /api/* handlers.
+  // Rejects with an Error whose `code` is the server's `error` string. ──
+  const apiPost = useCallback(async (url, payload) => {
+    const current = firebaseReady ? auth.currentUser : null
+    if (!current) throw Object.assign(new Error('auth'), { code: 'auth' })
+    let token
+    try {
+      token = await current.getIdToken()
+    } catch {
+      throw Object.assign(new Error('auth'), { code: 'auth' })
+    }
+    let res
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload || {}),
+      })
+    } catch {
+      throw Object.assign(new Error('network'), { code: 'network' })
+    }
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok || json.error) {
+      throw Object.assign(new Error(json.error || 'unknown'), { code: json.error || 'unknown', data: json })
+    }
+    return json
+  }, [])
+
+  // Occupancy for the booking grid. Customers can only read their own
+  // bookings, so which slots *other* people took comes from /api/slots/taken —
+  // court, date and hour only, no names or amounts. Staff already hold the
+  // full `bookings` snapshot and don't need the call.
+  const loadTakenSlots = useCallback(async (dates) => {
+    const want = [...new Set((dates || []).filter(Boolean))]
+    if (!want.length || isAdmin) return
+    try {
+      const res = await apiPost('/api/slots/taken', { dates: want })
+      setTakenSlots((prev) => {
+        const next = new Set(prev)
+        // drop the stale view of these dates before re-adding, so a cancelled
+        // booking actually frees its slot again
+        for (const key of prev) {
+          const [, d] = key.split('|')
+          if (want.includes(d)) next.delete(key)
+        }
+        Object.entries(res.taken || {}).forEach(([date, slots]) => {
+          (slots || []).forEach((s) => next.add(`${s.courtId}|${date}|${s.hour}`))
+        })
+        return next
+      })
+    } catch (e) {
+      console.error('[Bounce] taken slots', e)
+    }
+  }, [apiPost, isAdmin])
+
   // slot status for a court/date/hour
   const slotStatus = useCallback((court, date, hour) => {
     if (hour < court.open || hour >= court.close) return 'closed'
@@ -304,11 +410,11 @@ export function StoreProvider({ children }) {
     const slotTime = new Date(date + 'T00:00:00')
     slotTime.setHours(hour)
     if (slotTime <= now) return 'past'
-    const taken = bookings.some(
+    const taken = takenSlots.has(`${court.id}|${date}|${hour}`) || bookings.some(
       (b) => b.courtId === court.id && b.date === date && b.hour === hour && b.status !== 'cancelled'
     )
     return taken ? 'booked' : 'free'
-  }, [bookings])
+  }, [bookings, takenSlots])
 
   // add/subtract stamps for one member; issues a voucher when 10 are reached.
   // reads the current member from the live snapshot (single-shot; callers that
@@ -335,69 +441,20 @@ export function StoreProvider({ children }) {
     return issued > 0
   }, [members])
 
-  // ── multi-slot checkout — one payment, one booking record per selected cell.
-  // All writes (bookings, stamp-code usage, stamps, earned codes) go in a
-  // single Firestore batch so the stamp math is computed exactly once (no race
-  // between per-booking snapshot reads).
-  const createMultiBooking = useCallback(async (items, { voucherId, payMethod }) => {
-    const ordered = sortSlotItems(items, courts.map((c) => c.id))
-    const priced = ordered.map((it) => {
-      const court = courts.find((c) => c.id === it.courtId)
-      if (!court) throw new Error('court_missing')
-      const base = isPeak(it.hour, court) ? court.pricePeak : court.priceOff
-      return { ...it, base }
+  // ── multi-slot checkout — runs entirely on the server (`/api/bookings/pay`).
+  // The browser only says *what* it wants; price, slip verification, voucher
+  // ownership and stamp math are all decided there, and Firestore rules block
+  // customer writes to bookings/vouchers/stampLog. `slip` is a data-URL of the
+  // transfer slip and is required whenever the server total is above ฿0. ──
+  const createMultiBooking = useCallback(async (items, { voucherId, slip } = {}) => {
+    const res = await apiPost('/api/bookings/pay', {
+      items: items.map((it) => ({ courtId: it.courtId, date: it.date, hour: it.hour })),
+      voucherId: voucherId || '',
+      slip: slip || '',
     })
-    const clash = priced.some((it, i) =>
-      priced.some((o, j) => j !== i && o.courtId === it.courtId && o.date === it.date && o.hour === it.hour)
-      || bookings.some((b) => b.courtId === it.courtId && b.date === it.date && b.hour === it.hour && b.status !== 'cancelled')
-    )
-    if (clash) throw new Error('slot_taken')
-    const applyVoucher = !!voucherId && priced.length > 0
-    const cheapestIdx = applyVoucher
-      ? priced.reduce((best, it, i) => it.base < priced[best].base ? i : best, 0)
-      : -1
-
-    const createdAt = nowLocalISO()
-    const ref = genRef()          // one reference for the whole booking session
-    const newBookings = priced.map((it, i) => {
-      const disc = i === cheapestIdx ? it.base : 0
-      const total = it.base - disc
-      return {
-        id: nid('b'), ref, userId: user.id, courtId: it.courtId, date: it.date, hour: it.hour, duration: 60,
-        price: it.base, discount: disc, total,
-        payMethod: i === cheapestIdx && applyVoucher ? 'voucher' : payMethod,
-        status: 'upcoming', createdAt, voucherUsed: applyVoucher && i === cheapestIdx,
-      }
-    })
-
-    const batch = writeBatch(db)
-    newBookings.forEach((b) => batch.set(doc(db, 'bookings', b.id), stripId(b)))
-    if (applyVoucher) batch.update(doc(db, 'vouchers', voucherId), { used: true })
-
-    // one stamp per booking not covered by a voucher redemption.
-    // use the live `user` (always present when booking) as the stamp source so
-    // this never silently skips if the members snapshot hasn't populated yet.
-    const stampBookings = newBookings.filter((b) => !b.voucherUsed)
-    let voucherEarned = false
-    if (stampBookings.length) {
-      let stamps = (user.stamps || 0) + stampBookings.length
-      let earned = 0
-      while (stamps >= 10) { stamps -= 10; earned += 1 }
-      voucherEarned = earned > 0
-      batch.update(doc(db, 'members', user.id), {
-        stamps, bookingsYear: (user.bookingsYear || 0) + stampBookings.length,
-      })
-      stampBookings.forEach((b) => batch.set(doc(db, 'stampLog', nid('s')), {
-        userId: user.id, date: todayISO(), delta: 1, note: `Booking ${b.ref}`, by: 'system',
-      }))
-      for (let k = 0; k < earned; k += 1) {
-        batch.set(doc(db, 'vouchers', nid('v')), {
-          userId: user.id, issued: todayISO(), expiry: null, used: false, source: 'stamps',
-        })
-      }
-    }
-    await batch.commit()
-
+    const newBookings = res.bookings || []
+    const voucherEarned = !!res.voucherEarned
+    if (!newBookings.length) throw Object.assign(new Error('unknown'), { code: 'unknown' })
     const grandTotal = newBookings.reduce((s, b) => s + b.total, 0)
     notify(
       newBookings.length > 1
@@ -409,7 +466,13 @@ export function StoreProvider({ children }) {
         lang === 'th' ? 'สะสมแสตมป์ครบ 10 ดวงแล้ว' : 'You collected 10 stamps')
     }
     return { bookings: newBookings, voucherEarned }
-  }, [courts, bookings, user, notify, lang])
+  }, [apiPost, notify, lang])
+
+  // ── admin: short-lived signed URL for a stored payment slip.
+  // The bucket is private; only `/api/admin/slip` can mint a link, and every
+  // call is written to adminLog (PDPA access trail). ──
+  const fetchSlipUrl = useCallback(async (bookingId) =>
+    apiPost('/api/admin/slip', { bookingId }), [apiPost])
 
   const cancelBooking = useCallback(async (bookingId, by = 'user') => {
     const bk = bookings.find((b) => b.id === bookingId)
@@ -441,7 +504,22 @@ export function StoreProvider({ children }) {
 
   const updateMember = useCallback(async (id, patch) => { await updateDoc(doc(db, 'members', id), patch) }, [])
 
-  const saveSettings = useCallback(async (obj) => { await setDoc(doc(db, 'config', 'settings'), obj) }, [])
+  const saveSettings = useCallback(async (obj) => {
+    const payout = {
+      payAccountName: String(obj.payAccountName || '').trim(),
+      payAccountNo: String(obj.payAccountNo || '').replace(/\D/g, ''),
+      promptPayId: String(obj.promptPayId || '').replace(/\D/g, ''),
+    }
+    const rest = { ...obj }
+    delete rest.payAccountName
+    delete rest.payAccountNo
+    delete rest.promptPayId
+    delete rest.gatewayKey
+    await Promise.all([
+      setDoc(doc(db, 'config', 'settings'), rest),
+      setDoc(doc(db, 'config', 'payout'), payout),
+    ])
+  }, [])
 
   // ── admin manual booking — for phone-in / walk-in customers. Books one or
   //    more slots (any court/date/hour) for a member in a single batch, with
@@ -559,7 +637,7 @@ export function StoreProvider({ children }) {
     user, completeLineLogin, logout, isAdmin, adminLogin, adminLogout, resetDemo,
     registerEmail, loginEmail, requestReset, resendVerification,
     notifications, notify, markNotifsRead,
-    slotStatus, createMultiBooking, cancelBooking,
+    slotStatus, loadTakenSlots, createMultiBooking, cancelBooking, fetchSlipUrl,
     adminAdjustStamps, adminCreateMultiBooking, adminMergeMembers,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

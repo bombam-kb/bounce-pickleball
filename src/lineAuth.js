@@ -50,11 +50,16 @@ function take(name) {
     const v = localStorage.getItem(name)
     if (v) return v
   } catch { /* ignore */ }
+  try {
+    const v = sessionStorage.getItem(name)
+    if (v) return v
+  } catch { /* ignore */ }
   return getCookie(name)
 }
 
 function remove(name) {
   try { localStorage.removeItem(name) } catch { /* ignore */ }
+  try { sessionStorage.removeItem(name) } catch { /* ignore */ }
   clearCookie(name)
 }
 
@@ -78,6 +83,7 @@ export function startLineLogin() {
   callbackFlight = null
   const state = crypto.randomUUID()
   put(STATE_KEY, state)
+  try { sessionStorage.setItem(STATE_KEY, state) } catch { /* private mode */ }
   remove(PENDING_KEY)
   if (import.meta.env.DEV) {
     console.info('[LINE] start login', { redirect_uri: lineCallbackUri(), state })
@@ -94,8 +100,10 @@ export function startLineLogin() {
 
 /**
  * Pull the authorization code out of the callback URL once.
- * Order: memory → storage → URL. Do not require stored CSRF state when the
- * LINE app wiped the browser context (private / external browser).
+ * Order: memory → storage → URL. Stored `state` (cookie + local/session
+ * storage) is required — without it anyone could send a victim a callback
+ * URL that logs them into the attacker's LINE-linked account. If LINE opened
+ * a fresh browser that wiped storage, the user taps login again from here.
  */
 function extractCallbackCode() {
   if (memoryPendingCode) return memoryPendingCode
@@ -137,10 +145,8 @@ function extractCallbackCode() {
     throw e
   }
 
-  // Only reject when we still have a stored state AND it disagrees.
-  // If storage was wiped (scenario 2), `expected` is null → continue.
-  if (expected && state !== expected) {
-    const e = new Error('oauth state mismatch — start login again from this browser')
+  if (!expected || state !== expected) {
+    const e = new Error('oauth state missing or mismatch — start login again from this browser')
     e.code = 'badstate'
     throw e
   }

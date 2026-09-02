@@ -9,4 +9,6 @@ service-account.json
 *-firebase-adminsdk*.json
 .vscode/
 .idea/
+.claude/
+.vercel/
 ~$*

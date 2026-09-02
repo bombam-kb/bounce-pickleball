@@ -1,0 +1,84 @@
+// Source of truth for Firestore authorization. Publish with `npm run rules:deploy`
+// (or paste into Firebase console → Firestore → Rules). `npm run check:security`
+// verifies the behaviour these rules are meant to produce.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // a customer may edit their own profile fields only. stamps / bookingsYear
+    // are loyalty currency and `suspended` is moderation state — both are
+    // written by the server (Admin SDK) or staff, never by the account itself.
+    function ownProfileEditOnly(uid) {
+      return request.auth != null && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'name', 'phone', 'email', 'lang', 'avatar', 'avatarUrl',
+             'birthday', 'country', 'channel'
+           ]);
+    }
+
+    function freshMember() {
+      return request.resource.data.stamps == 0
+        && request.resource.data.bookingsYear == 0
+        && request.resource.data.suspended == false;
+    }
+
+    // a customer may only read rows that belong to them. Queries must say so
+    // (`where('userId', '==', uid)`) or Firestore rejects them outright.
+    function ownRow() {
+      return request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // staff registry — managed from the Firebase console only.
+    // a signed-in user may read only their own entry (to check admin status).
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // public catalog — anyone can read; only admins can change
+    match /courts/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /promos/{id} { allow read: if true; allow write: if isAdmin(); }
+
+    // operational settings (booking window, language) are public so the home
+    // grid works before login. Bank/PromptPay details live on config/payout
+    // and require a signed-in user — they are not a public catalog.
+    match /config/settings { allow read: if true; allow write: if isAdmin(); }
+    match /config/payout { allow read: if request.auth != null; allow write: if isAdmin(); }
+    match /config/{id} { allow read, write: if isAdmin(); }
+
+    // members — sign-up creates its own doc with zeroed loyalty fields;
+    // after that a customer can only touch profile fields, and can only read
+    // their own: the collection holds names, phones, emails and birthdays.
+    match /members/{uid} {
+      allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow create: if (request.auth != null && request.auth.uid == uid && freshMember()) || isAdmin();
+      allow update: if ownProfileEditOnly(uid) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // money + loyalty — a customer reads only their own rows and writes none.
+    // Bookings are created by `/api/bookings/pay` (Admin SDK, bypasses rules)
+    // after the transfer slip is verified; staff write from the admin panel.
+    // The booking grid gets other people's occupied slots from
+    // `/api/slots/taken`, which returns court/date/hour and nothing else.
+    match /bookings/{id} { allow read: if isAdmin() || ownRow(); allow write: if isAdmin(); }
+    match /vouchers/{id} { allow read: if isAdmin() || ownRow(); allow write: if isAdmin(); }
+    match /stampLog/{id} { allow read: if isAdmin() || ownRow(); allow write: if isAdmin(); }
+
+    // verified slip payments — staff-readable audit trail, server-written only
+    match /payments/{id} { allow read: if isAdmin(); allow write: if false; }
+
+    // throttle counters for the paid slip-checking API — server eyes only,
+    // or a customer could reset their own quota
+    match /rateLimits/{id} { allow read, write: if false; }
+
+    // admin activity log — staff only; it quotes member names, booking refs
+    // and every slip that was opened
+    match /adminLog/{id} { allow read: if isAdmin(); allow write: if isAdmin(); }
+  }
+}

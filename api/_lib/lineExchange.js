@@ -1,71 +1,20 @@
 /**
  * LINE Login → Firebase custom-token exchange (server-only).
  * Used by the Vercel `/api/auth/line` function and the Vite dev middleware.
+ *
+ * The browser only sends the OAuth `code`. The redirect URI is taken from a
+ * server allowlist (never trusted from the body), the LINE `id_token` is
+ * verified against this channel, and the IP is throttled so the public
+ * endpoint cannot be used to burn LINE / Vercel quota.
  */
-import fs from 'node:fs'
-import path from 'node:path'
 import admin from 'firebase-admin'
+import {
+  getEnv, initAdmin, readJsonBody, jsonSender, clientIp, rateLimitDocId,
+  assertRateLimit, bumpRateLimit,
+} from './serverAdmin.js'
 
-function getEnv(name, fallback = '') {
-  return (process.env[name] || fallback).trim()
-}
-
-function loadServiceAccount() {
-  const raw = getEnv('FIREBASE_SERVICE_ACCOUNT_JSON')
-  if (raw) {
-    try {
-      return JSON.parse(raw)
-    } catch {
-      const err = new Error('FIREBASE_SERVICE_ACCOUNT_JSON is invalid JSON (use one line, or FIREBASE_SERVICE_ACCOUNT_PATH)')
-      err.code = 'notconfigured'
-      throw err
-    }
-  }
-
-  const rel = getEnv('FIREBASE_SERVICE_ACCOUNT_PATH')
-  if (rel) {
-    const file = path.isAbsolute(rel) ? rel : path.resolve(process.cwd(), rel)
-    try {
-      return JSON.parse(fs.readFileSync(file, 'utf8'))
-    } catch (e) {
-      const err = new Error(`Cannot read service account file: ${file} (${e.message})`)
-      err.code = 'notconfigured'
-      throw err
-    }
-  }
-
-  const err = new Error('Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_PATH')
-  err.code = 'notconfigured'
-  throw err
-}
-
-function initAdmin() {
-  if (admin.apps.length) return admin.app()
-
-  const projectId = getEnv('VITE_FB_PROJECT_ID') || getEnv('FB_PROJECT_ID')
-  const sa = loadServiceAccount()
-
-  return admin.initializeApp({
-    credential: admin.credential.cert(sa),
-    projectId: projectId || sa.project_id,
-  })
-}
-
-async function readJsonBody(req) {
-  if (req.body && typeof req.body === 'object') return req.body
-  if (typeof req.body === 'string' && req.body) {
-    try { return JSON.parse(req.body) } catch { return {} }
-  }
-  // Node IncomingMessage (Vite middleware)
-  if (typeof req.on === 'function') {
-    const chunks = []
-    for await (const chunk of req) chunks.push(chunk)
-    const raw = Buffer.concat(chunks).toString('utf8')
-    if (!raw) return {}
-    try { return JSON.parse(raw) } catch { return {} }
-  }
-  return {}
-}
+const LINE_FAIL_LIMIT = 20
+const LINE_FAIL_WINDOW_MS = 60 * 60 * 1000
 
 function todayISO() {
   const d = new Date()
@@ -75,48 +24,42 @@ function todayISO() {
   return `${y}-${m}-${day}`
 }
 
-async function retargetUserId(db, col, fromId, intoId) {
-  const snap = await db.collection(col).where('userId', '==', fromId).get()
-  if (snap.empty) return 0
-  const docs = snap.docs
-  for (let i = 0; i < docs.length; i += 400) {
-    const batch = db.batch()
-    docs.slice(i, i + 400).forEach((d) => batch.update(d.ref, { userId: intoId }))
-    await batch.commit()
-  }
-  return docs.length
+function allowedRedirectUris() {
+  const origins = new Set([
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
+  ])
+  getEnv('LINE_REDIRECT_ORIGINS').split(',').map((s) => s.trim()).filter(Boolean)
+    .forEach((o) => origins.add(o.replace(/\/$/, '')))
+  const pub = getEnv('VITE_PUBLIC_ORIGIN')
+  if (pub) origins.add(pub.replace(/\/$/, ''))
+  const vercel = getEnv('VERCEL_URL')
+  if (vercel) origins.add(vercel.startsWith('http') ? vercel.replace(/\/$/, '') : `https://${vercel}`)
+  return new Set([...origins].map((o) => `${o}/auth/line/callback`))
 }
 
-/** LINE user IDs are unique per Login channel. A new channel looks like a new person. */
-async function adoptLineTwin(db, uid, name) {
-  const n = (name || '').trim()
-  if (!n) return
-  const q = await db.collection('members').where('name', '==', n).get()
-  const twins = q.docs.filter((d) => {
-    if (d.id === uid) return false
-    const ch = d.data()?.channel
-    return ch === 'line' || String(d.id).startsWith('line_')
-  })
-  if (twins.length !== 1) return
-  const fromId = twins[0].id
-  const from = twins[0].data() || {}
-  const intoSnap = await db.collection('members').doc(uid).get()
-  const into = intoSnap.data() || {}
+function pickRedirectUri(requested) {
+  const allow = allowedRedirectUris()
+  if (requested && allow.has(requested)) return requested
+  return null
+}
 
-  await retargetUserId(db, 'bookings', fromId, uid)
-  await retargetUserId(db, 'vouchers', fromId, uid)
-  await retargetUserId(db, 'stampLog', fromId, uid)
-
-  const batch = db.batch()
-  let stamps = (into.stamps || 0) + (from.stamps || 0)
-  while (stamps >= 10) stamps -= 10
-  batch.update(db.collection('members').doc(uid), {
-    stamps,
-    bookingsYear: (into.bookingsYear || 0) + (from.bookingsYear || 0),
-    previousMemberIds: [...(into.previousMemberIds || []), fromId],
+async function verifyLineIdToken(idToken, channelId, expectedSub) {
+  const res = await fetch('https://api.line.me/oauth2/v2.1/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
   })
-  batch.delete(db.collection('members').doc(fromId))
-  await batch.commit()
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || json.sub !== expectedSub || String(json.aud) !== channelId) {
+    const e = new Error('line_id_token')
+    e.status = 401
+    e.code = 'line_id_token'
+    throw e
+  }
 }
 
 /**
@@ -124,45 +67,50 @@ async function adoptLineTwin(db, uid, name) {
  * @param {import('http').ServerResponse} res
  */
 export async function handleLineExchange(req, res) {
-  const send = (status, data) => {
-    res.statusCode = status
-    res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    res.setHeader('Cache-Control', 'no-store')
-    res.end(JSON.stringify(data))
-  }
+  const send = jsonSender(res)
 
-  if (req.method === 'OPTIONS') {
-    res.statusCode = 204
-    res.end()
-    return
-  }
-
-  if (req.method !== 'POST') {
-    send(405, { error: 'method' })
-    return
-  }
+  if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return }
+  if (req.method !== 'POST') { send(405, { error: 'method' }); return }
 
   const channelId = getEnv('VITE_LINE_CHANNEL_ID') || getEnv('LINE_CHANNEL_ID')
   const channelSecret = getEnv('LINE_CHANNEL_SECRET')
   if (!channelId || !channelSecret) {
-    send(500, { error: 'notconfigured', detail: 'LINE channel env missing' })
+    send(500, { error: 'notconfigured' })
     return
   }
+
+  let db
+  try {
+    initAdmin()
+    db = admin.firestore()
+  } catch (e) {
+    console.error('[line-auth] admin init', e)
+    send(500, { error: 'notconfigured' })
+    return
+  }
+
+  const ipKey = rateLimitDocId('line', clientIp(req))
+  try {
+    await assertRateLimit(db, ipKey, { limit: LINE_FAIL_LIMIT, windowMs: LINE_FAIL_WINDOW_MS, error: 'too_many' })
+  } catch (e) {
+    send(e.status || 429, { error: e.code || 'too_many' })
+    return
+  }
+  await bumpRateLimit(db, ipKey, { windowMs: LINE_FAIL_WINDOW_MS })
 
   let body
   try {
     body = await readJsonBody(req)
-  } catch {
-    send(400, { error: 'badrequest' })
+  } catch (e) {
+    send(e.status === 413 ? 413 : 400, { error: e.code || 'badrequest' })
     return
   }
 
   const code = typeof body.code === 'string' ? body.code.trim() : ''
-  const redirectUri = typeof body.redirectUri === 'string' ? body.redirectUri.trim() : ''
-  if (!code || !redirectUri) {
-    send(400, { error: 'badrequest' })
-    return
-  }
+  const requested = typeof body.redirectUri === 'string' ? body.redirectUri.trim() : ''
+  const redirectUri = pickRedirectUri(requested)
+  if (!code) { send(400, { error: 'badrequest' }); return }
+  if (!redirectUri) { send(400, { error: 'badredirect' }); return }
 
   try {
     const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
@@ -177,8 +125,8 @@ export async function handleLineExchange(req, res) {
       }),
     })
     const tokenJson = await tokenRes.json().catch(() => ({}))
-    if (!tokenRes.ok || !tokenJson.access_token) {
-      send(401, { error: 'line_token', detail: tokenJson.error_description || tokenJson.error || 'token exchange failed' })
+    if (!tokenRes.ok || !tokenJson.access_token || !tokenJson.id_token) {
+      send(401, { error: 'line_token' })
       return
     }
 
@@ -187,13 +135,13 @@ export async function handleLineExchange(req, res) {
     })
     const profile = await profileRes.json().catch(() => ({}))
     if (!profileRes.ok || !profile.userId) {
-      send(401, { error: 'line_profile', detail: profile.message || 'profile failed' })
+      send(401, { error: 'line_profile' })
       return
     }
 
-    initAdmin()
+    await verifyLineIdToken(tokenJson.id_token, channelId, profile.userId)
+
     const uid = `line_${profile.userId}`
-    const db = admin.firestore()
     const ref = db.collection('members').doc(uid)
     const snap = await ref.get()
     const name = (profile.displayName || 'LINE User').slice(0, 60)
@@ -229,10 +177,6 @@ export async function handleLineExchange(req, res) {
       return
     }
 
-    try { await adoptLineTwin(db, uid, name) } catch (e) {
-      console.error('[line-auth] adopt twin', e)
-    }
-
     const firebaseToken = await admin.auth().createCustomToken(uid, {
       provider: 'line',
       lineUserId: profile.userId,
@@ -240,11 +184,9 @@ export async function handleLineExchange(req, res) {
 
     send(200, { token: firebaseToken })
   } catch (e) {
+    if (e?.status) { send(e.status, { error: e.code }); return }
     const codeName = e?.code === 'notconfigured' ? 'notconfigured' : 'unknown'
     console.error('[line-auth]', e)
-    send(500, {
-      error: codeName,
-      detail: e?.message || 'exchange failed',
-    })
+    send(500, { error: codeName })
   }
 }
