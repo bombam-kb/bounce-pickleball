@@ -82,6 +82,7 @@ export const DICT = {
   copyAccount: { th: 'คัดลอกเลขบัญชี', en: 'Copy account number' },
   copied: { th: 'คัดลอกแล้ว', en: 'Copied' },
   saveQrCode: { th: 'บันทึก QR', en: 'Save QR Code' },
+  saveQrHoldHint: { th: 'กดค้างที่รูป แล้วเลือกบันทึกรูป', en: 'Touch and hold the image, then tap Save Image' },
   attachProof: { th: 'แนบหลักฐานการชำระเงิน', en: 'Please attach proof of payment' },
   uploadProof: { th: 'อัปโหลด', en: 'Upload' },
   payQrAlt: { th: 'QR ชำระเงิน Bounce Pickleball', en: 'Bounce Pickleball payment QR' },

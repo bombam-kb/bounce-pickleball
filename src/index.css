@@ -660,6 +660,18 @@ a { color: inherit; }
 }
 .pay-account-no .num { font-size: 15px; letter-spacing: 0.02em; font-weight: 700; white-space: nowrap; }
 .pay-save-qr { width: 100%; min-height: 44px; }
+.pay-qr-save-back .modal { text-align: center; max-width: 360px; }
+.pay-qr-save-img {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  margin: 16px auto 0;
+  background: #fff;
+  border: 2px solid var(--stroke);
+  border-radius: var(--r-md);
+  -webkit-touch-callout: default;
+  pointer-events: auto;
+}
 .pay-pair-amt { font-size: 22px; text-align: center; }
 .pay-proof {
   display: flex; align-items: center; justify-content: space-between;

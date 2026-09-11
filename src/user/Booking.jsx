@@ -8,30 +8,65 @@ const SLIP_MAX_EDGE = 1600
 const SLIP_JPEG_Q = 0.82
 
 const SHOP_QR = '/qr-bounce-pickleball.jpg'
+const SHOP_QR_FILE = 'qr-bounce-pickleball.jpg'
 
-function saveShopQr() {
-  const run = async () => {
-    try {
-      const res = await fetch(SHOP_QR)
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'qr-bounce-pickleball.jpg'
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      window.setTimeout(() => URL.revokeObjectURL(url), 2000)
-    } catch {
-      window.open(SHOP_QR, '_blank', 'noopener')
-    }
+function isIosLike() {
+  const ua = navigator.userAgent || ''
+  return /iPhone|iPad|iPod/i.test(ua)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
+function isInAppBrowser() {
+  return /Line\/|FBAN|FBAV|Instagram|MicroMessenger/i.test(navigator.userAgent || '')
+}
+
+async function loadShopQrFile() {
+  const res = await fetch(SHOP_QR)
+  const blob = await res.blob()
+  return new File([blob], SHOP_QR_FILE, { type: blob.type || 'image/jpeg' })
+}
+
+async function shareQrFile(file) {
+  if (!file || !navigator.share) return false
+  try {
+    if (navigator.canShare && !navigator.canShare({ files: [file] })) return false
+    await navigator.share({ files: [file], title: 'QR Bounce Pickleball' })
+    return true
+  } catch (err) {
+    if (err?.name === 'AbortError') return true
+    return false
   }
-  run()
+}
+
+function downloadQrFile(file) {
+  const url = URL.createObjectURL(file)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = file.name
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
 
 function PayTransfer({ name, no, amount, lang }) {
   const [copied, setCopied] = useState(false)
+  const [holdOpen, setHoldOpen] = useState(false)
+  const qrFileRef = useRef(null)
+  const qrReadyRef = useRef(null)
+
+  useEffect(() => {
+    let alive = true
+    qrReadyRef.current = loadShopQrFile()
+      .then((file) => {
+        if (alive) qrFileRef.current = file
+        return file
+      })
+      .catch(() => null)
+    return () => { alive = false }
+  }, [])
+
   const copy = async () => {
     if (!no) return
     try {
@@ -40,6 +75,22 @@ function PayTransfer({ name, no, amount, lang }) {
       window.setTimeout(() => setCopied(false), 1600)
     } catch { /* ignore */ }
   }
+
+  const saveQr = async () => {
+    // LINE / Facebook webviews treat blob downloads as an external app.
+    if (isInAppBrowser()) {
+      setHoldOpen(true)
+      return
+    }
+    const file = qrFileRef.current || await qrReadyRef.current
+    if (await shareQrFile(file)) return
+    if (isIosLike() || !file) {
+      setHoldOpen(true)
+      return
+    }
+    downloadQrFile(file)
+  }
+
   return (
     <div className="pay-transfer">
       <div className="pay-card">
@@ -57,13 +108,24 @@ function PayTransfer({ name, no, amount, lang }) {
               <Icon name="copy" size={16} />
             </button>
           )}
-          <button type="button" className="btn pay-save-qr" onClick={saveShopQr}>
+          <button type="button" className="btn pay-save-qr" onClick={saveQr}>
             <Icon name="download" size={16} /> {t('saveQrCode', lang)}
           </button>
         </div>
       </div>
       {amount != null && (
         <div className="num pay-pair-amt">฿{amount}</div>
+      )}
+      {holdOpen && (
+        <Modal onClose={() => setHoldOpen(false)} className="pay-qr-save-back">
+          <h3>{t('saveQrCode', lang)}</h3>
+          <p className="tiny mt-2">{t('saveQrHoldHint', lang)}</p>
+          <img
+            className="pay-qr-save-img"
+            src={SHOP_QR}
+            alt={t('payQrAlt', lang)}
+          />
+        </Modal>
       )}
     </div>
   )
