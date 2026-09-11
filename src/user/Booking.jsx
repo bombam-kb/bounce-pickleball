@@ -77,18 +77,30 @@ function PayTransfer({ name, no, amount, lang }) {
   }
 
   const saveQr = async () => {
-    // LINE / Facebook webviews treat blob downloads as an external app.
+    // Android (Chrome / LINE) already saved via <a download>. Share-sheet and
+    // hold-to-save are iPhone-only — those paths replaced the working download.
+    if (!isIosLike()) {
+      const ready = qrFileRef.current
+      if (ready) {
+        downloadQrFile(ready)
+        return
+      }
+      const a = document.createElement('a')
+      a.href = SHOP_QR
+      a.download = SHOP_QR_FILE
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      return
+    }
     if (isInAppBrowser()) {
       setHoldOpen(true)
       return
     }
     const file = qrFileRef.current || await qrReadyRef.current
     if (await shareQrFile(file)) return
-    if (isIosLike() || !file) {
-      setHoldOpen(true)
-      return
-    }
-    downloadQrFile(file)
+    setHoldOpen(true)
   }
 
   return (
