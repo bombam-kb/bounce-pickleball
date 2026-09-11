@@ -12,6 +12,7 @@ import { auth, db, firebaseReady } from './firebase.js'
 import {
   genRef, todayISO, isPeak, nowLocalISO, sortSlotItems, SEED_SETTINGS, SEED_PAYOUT,
 } from './data/index.js'
+import { sanitizeLegalHtml } from './legalHtml.js'
 
 const Ctx = createContext(null)
 export const useStore = () => useContext(Ctx)
@@ -515,6 +516,9 @@ export function StoreProvider({ children }) {
     delete rest.payAccountNo
     delete rest.promptPayId
     delete rest.gatewayKey
+    ;['payTermsTh', 'payTermsEn', 'appTermsTh', 'appTermsEn'].forEach((k) => {
+      rest[k] = sanitizeLegalHtml(rest[k])
+    })
     await Promise.all([
       setDoc(doc(db, 'config', 'settings'), rest),
       setDoc(doc(db, 'config', 'payout'), payout),

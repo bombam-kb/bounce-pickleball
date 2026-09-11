@@ -1,6 +1,34 @@
 import React, { useState, useEffect } from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
+import { legalHasText } from '../legalHtml.js'
+import LegalEditor from './LegalEditor.jsx'
+
+function LegalLangPair({ field, form, set, lang }) {
+  return (
+    <div className="col gap-4 mt-3">
+      <div>
+        <label className="label">{t('legalCopyTh', lang)} (TH)</label>
+        <LegalEditor
+          lang={lang}
+          value={form[`${field}Th`] || ''}
+          onChange={(html) => set(`${field}Th`, html)}
+        />
+      </div>
+      <div>
+        <label className="label">{t('legalCopyEn', lang)} (EN)</label>
+        <LegalEditor
+          lang={lang}
+          value={form[`${field}En`] || ''}
+          onChange={(html) => set(`${field}En`, html)}
+        />
+        {!legalHasText(form[`${field}En`]) && (
+          <p className="tiny mt-1">{t('legalEnMissing', lang)}</p>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function Settings() {
   const { lang, settings, saveSettings, logAdmin, resetDemo } = useStore()
@@ -26,7 +54,7 @@ export default function Settings() {
   return (
     <div>
       <h1 className="a-title">{t('settings', lang)}</h1>
-      <div className="card pad-5 mt-4" style={{ maxWidth: 560 }}>
+      <div className="card pad-5 mt-4" style={{ maxWidth: 640 }}>
         <div className="col gap-4">
           <div>
             <label className="label">{t('advanceBookingLabel', lang)}</label>
@@ -66,7 +94,23 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="card pad-5 mt-4" style={{ maxWidth: 560 }}>
+      <div className="card pad-5 mt-4" style={{ maxWidth: 640 }}>
+        <h3 style={{ fontSize: 15 }}>{t('payTermsTitle', lang)}</h3>
+        <p className="tiny mt-1">{t('legalPayHint', lang)}</p>
+        <LegalLangPair field="payTerms" form={form} set={set} lang={lang} />
+        <button className="btn btn-lime btn-lg mt-4" onClick={save}>{t('save', lang)}</button>
+        {saved && <span className="chip chip-green mt-2">✓ {lang === 'th' ? 'บันทึกแล้ว' : 'Saved'}</span>}
+      </div>
+
+      <div className="card pad-5 mt-4" style={{ maxWidth: 640 }}>
+        <h3 style={{ fontSize: 15 }}>{t('appTermsTitle', lang)}</h3>
+        <p className="tiny mt-1">{t('legalAppHint', lang)}</p>
+        <LegalLangPair field="appTerms" form={form} set={set} lang={lang} />
+        <button className="btn btn-lime btn-lg mt-4" onClick={save}>{t('save', lang)}</button>
+        {saved && <span className="chip chip-green mt-2">✓ {lang === 'th' ? 'บันทึกแล้ว' : 'Saved'}</span>}
+      </div>
+
+      <div className="card pad-5 mt-4" style={{ maxWidth: 640 }}>
         <h3 style={{ fontSize: 15 }}>🗄️ Demo Data</h3>
         <p className="tiny mt-1">{t('demoNote', lang)}</p>
         <div className="act-row">

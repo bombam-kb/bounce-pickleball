@@ -7,10 +7,66 @@ import { Icon, Modal, hourRangeLabel, printSlip } from '../components/ui.jsx'
 const SLIP_MAX_EDGE = 1600
 const SLIP_JPEG_Q = 0.82
 
-function promptPayQrSrc(id, amount) {
-  const digits = String(id || '').replace(/\D/g, '')
-  if (!digits) return ''
-  return `https://promptpay.io/${digits}/${Number(amount).toFixed(2)}.png`
+const SHOP_QR = '/qr-bounce-pickleball.jpg'
+
+function saveShopQr() {
+  const run = async () => {
+    try {
+      const res = await fetch(SHOP_QR)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'qr-bounce-pickleball.jpg'
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000)
+    } catch {
+      window.open(SHOP_QR, '_blank', 'noopener')
+    }
+  }
+  run()
+}
+
+function PayTransfer({ name, no, amount, lang }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    if (!no) return
+    try {
+      await navigator.clipboard.writeText(no)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1600)
+    } catch { /* ignore */ }
+  }
+  return (
+    <div className="pay-transfer">
+      <div className="pay-card">
+        <div className="pay-card-qr">
+          <img src={SHOP_QR} alt={t('payQrAlt', lang)} />
+        </div>
+        <div className="pay-card-meta">
+          <img className="pay-kbank" src="/kbank.svg" alt="" />
+          <div className="pay-card-bank">{t('payBankKbank', lang)}</div>
+          {name && <div className="pay-account-name">{name}</div>}
+          {no && (
+            <button type="button" className="pay-account-no" onClick={copy}
+              aria-label={t('copyAccount', lang)} title={t('copyAccount', lang)}>
+              <span className="num">{copied ? t('copied', lang) : no}</span>
+              <Icon name="copy" size={16} />
+            </button>
+          )}
+          <button type="button" className="btn pay-save-qr" onClick={saveShopQr}>
+            <Icon name="download" size={16} /> {t('saveQrCode', lang)}
+          </button>
+        </div>
+      </div>
+      {amount != null && (
+        <div className="num pay-pair-amt">฿{amount}</div>
+      )}
+    </div>
+  )
 }
 
 function readFileAsDataUrl(file) {
@@ -69,46 +125,6 @@ function payErrorKey(code) {
   return DICT[key] ? key : 'slipErr_generic'
 }
 
-function PayTransfer({ name, no, qrSrc, amount, lang }) {
-  const [copied, setCopied] = useState(false)
-  const copy = async () => {
-    if (!no) return
-    try {
-      await navigator.clipboard.writeText(no)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1600)
-    } catch { /* ignore */ }
-  }
-  return (
-    <div className="pay-transfer">
-      <div className="pay-transfer-bank">
-        <img src="/kbank.svg" alt="" width={40} height={37} />
-        <div>
-          <div className="tiny">{t('payAccountLabel', lang)}</div>
-          <div className="pay-transfer-bank-name">{t('payBankKbank', lang)}</div>
-        </div>
-      </div>
-      {name && <div className="pay-account-name">{name}</div>}
-      {no && (
-        <button type="button" className="pay-account-no" onClick={copy}
-          aria-label={t('copyAccount', lang)} title={t('copyAccount', lang)}>
-          <span className="num">{no}</span>
-          <Icon name="copy" size={16} />
-        </button>
-      )}
-      {qrSrc && (
-        <div className="pay-qr">
-          <img src={qrSrc} alt="QR" />
-        </div>
-      )}
-      {amount != null && (
-        <div className="num pay-pair-amt">฿{amount}</div>
-      )}
-      {copied && <div className="tiny">{t('copied', lang)}</div>}
-    </div>
-  )
-}
-
 // step: summary → qr (if promptpay) → success
 export default function Booking({ cart, onDone, onBack }) {
   const { lang, courts, user, vouchers, createMultiBooking, settings } = useStore()
@@ -154,7 +170,6 @@ export default function Booking({ cart, onDone, onBack }) {
   const payName = String(settings.payAccountName || '').trim()
   const payNo = String(settings.payAccountNo || '').replace(/\D/g, '')
   const promptPayId = String(settings.promptPayId || '').replace(/\D/g, '')
-  const qrSrc = promptPayQrSrc(promptPayId, total)
   const payReady = !!payNo || !!promptPayId
 
   const toggleVoucher = (id) => {
@@ -355,15 +370,16 @@ export default function Booking({ cart, onDone, onBack }) {
         </div>
       </div>
 
-      {total > 0 && (payReady ? (
+      {total > 0 && (
         <div className="mt-3">
-          <PayTransfer name={payName} no={payNo} qrSrc={qrSrc} lang={lang} />
+          <PayTransfer name={payName} no={payNo} lang={lang} />
+          {!payReady && (
+            <div className="chip chip-red mt-2" style={{ width: '100%', whiteSpace: 'normal', justifyContent: 'center' }}>
+              {t('promptPayMissing', lang)}
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="chip chip-red mt-3" style={{ width: '100%', whiteSpace: 'normal', justifyContent: 'center' }}>
-          {t('promptPayMissing', lang)}
-        </div>
-      ))}
+      )}
 
       <button className="btn btn-lime btn-full btn-lg mt-4" onClick={doPay}
         disabled={slipBusy || (total > 0 && !payReady)}>
@@ -375,13 +391,13 @@ export default function Booking({ cart, onDone, onBack }) {
           <h3 className="tc" style={{ fontSize: 18 }}>{t('transferTitle', lang)}</h3>
           <p className="tc tiny mt-2">{t('scanToPay', lang)}</p>
           <div className="mt-3">
-            <PayTransfer name={payName} no={payNo} qrSrc={qrSrc} amount={total} lang={lang} />
+            <PayTransfer name={payName} no={payNo} amount={total} lang={lang} />
           </div>
 
           <input ref={fileRef} className="sr-only" type="file" accept="image/*"
             onChange={onPickSlip} disabled={slipBusy} />
           {slipPreview ? (
-            <div className="mt-4">
+            <div className="mt-3">
               <img className="slip-preview" src={slipPreview} alt="" />
               <button type="button" className="btn btn-ghost btn-full slip-change mt-2" disabled={slipBusy}
                 onClick={() => fileRef.current?.click()}>
@@ -389,11 +405,12 @@ export default function Booking({ cart, onDone, onBack }) {
               </button>
             </div>
           ) : (
-            <button type="button" className="slip-drop mt-4" disabled={slipBusy}
+            <button type="button" className="pay-proof mt-3" disabled={slipBusy}
               onClick={() => fileRef.current?.click()}>
-              <Icon name="image" size={22} />
-              <span>{t('uploadSlip', lang)}</span>
-              <span className="tiny">{t('slipJpgHint', lang)}</span>
+              <span className="pay-proof-label">{t('attachProof', lang)}</span>
+              <span className="btn btn-pine pay-proof-btn">
+                <Icon name="upload" size={16} /> {t('uploadProof', lang)}
+              </span>
             </button>
           )}
 

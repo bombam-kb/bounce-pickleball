@@ -82,7 +82,11 @@ async function idTokenFor(uid) {
   const custom = await admin.auth().createCustomToken(uid)
   const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${apiKey}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Referer: 'http://localhost:5173/',
+      Origin: 'http://localhost:5173',
+    },
     body: JSON.stringify({ token: custom, returnSecureToken: true }),
   })
   const json = await res.json()

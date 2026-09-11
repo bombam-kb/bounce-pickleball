@@ -173,6 +173,10 @@ export const SEED_SETTINGS = {
   slotDuration: 60,
   voucherDays: 90,
   advanceBookingDays: 14,
+  payTermsTh: 'โอนเข้าบัญชีร้านตามที่แสดงในแอปเท่านั้น ยอดต้องตรงกับยอดที่ระบบแสดง<br>อัปโหลดสลิปจากแอปธนาคารหลังโอน การจองสมบูรณ์เมื่อระบบตรวจสลิปผ่าน<br>หากช่องเวลาถูกจองตัดหน้า ให้ติดต่อพนักงานเรื่องคืนเงินหรือย้ายเวลา<br><u>ร้านไม่รับสลิปที่โอนเข้าบัญชีอื่น</u>',
+  payTermsEn: 'Transfer only to the shop account shown in the app. The amount must match the total shown.<br>Upload the bank-app slip after you pay. The booking is confirmed when the slip passes verification.<br>If the slot is taken before we can seat you, contact staff for a refund or a move.<br><u>Slips paid to another account are not accepted.</u>',
+  appTermsTh: 'แอปนี้ใช้สำหรับจองสนาม Bounce Pickleball House<br>ข้อมูลโปรไฟล์ใช้เพื่อการจองและการติดต่อจากร้าน<br>แสตมป์และโค้ดฟรีเป็นไปตามเงื่อนไขที่ร้านกำหนด<br><u>ร้านขอสงวนสิทธิ์ระงับบัญชีที่ใช้งานผิดวัตถุประสงค์</u>',
+  appTermsEn: 'This app is for booking courts at Bounce Pickleball House.<br>Profile details are used for bookings and shop contact.<br>Stamps and free-hour codes follow the shop\'s rules.<br><u>The shop may suspend accounts used in bad faith.</u>',
 }
 
 export const SEED_PAYOUT = {

@@ -28,6 +28,7 @@ const PATHS = {
   cake: <><path d="M4 20h16v-7a2 2 0 00-2-2H6a2 2 0 00-2 2v7z" /><path d="M4 15.5c1.3 1.2 2.7 1.2 4 0s2.7-1.2 4 0 2.7 1.2 4 0 2.7-1.2 4 0" /><path d="M12 8v3M12 5.5a1.2 1.2 0 001.2-1.3C13.2 3 12 2 12 2s-1.2 1-1.2 2.2A1.2 1.2 0 0012 5.5z" /></>,
   coin: <><circle cx="12" cy="12" r="8.5" /><path d="M12 8v8M9.5 10c0-1 1-1.8 2.5-1.8s2.5.7 2.5 1.7c0 2.3-5 1.9-5 4.1 0 1 1 1.8 2.5 1.8s2.5-.8 2.5-1.8" /></>,
   copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2" /></>,
+  upload: <><path d="M12 16V5M7 9l5-5 5 5" /><path d="M4 20h16" /></>,
 }
 
 export const BallImg = ({ size, className = '', style }) => (
@@ -66,8 +67,8 @@ export const AvatarGlyph = ({ avatar, size = 18 }) => (
     : <span style={{ fontSize: size, lineHeight: 1 }}>{avatar}</span>
 )
 
-export const Modal = ({ onClose, children }) => (
-  <div className="modal-back" onClick={onClose}>
+export const Modal = ({ onClose, children, className = '' }) => (
+  <div className={`modal-back${className ? ` ${className}` : ''}`} onClick={onClose}>
     <div className="modal" onClick={(e) => e.stopPropagation()}>
       <button className="modal-close" onClick={onClose} aria-label="Close">
         <Icon name="x" size={15} stroke={2.4} />
@@ -215,10 +216,8 @@ export const printSlip = (b, court, member, lang) => {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Anuphan', Tahoma, sans-serif; color: #101B14; padding: 24px; background: #fff; }
   .slip { max-width: 360px; margin: 0 auto; border: 2px solid #101B14; border-radius: 16px; overflow: hidden; }
-  .head { background: #3B4D27; color: #C6F135; text-align: center; padding: 18px 16px 14px; font-family: 'Prompt', Tahoma, sans-serif; }
-  .head h1 { font-size: 18px; letter-spacing: 1px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-  .head h1 svg { flex-shrink: 0; }
-  .head small { color: #F7F4EA; font-size: 10px; letter-spacing: 3px; }
+  .head { background: #fff; text-align: center; padding: 20px 24px 8px; }
+  .head .brand { width: 210px; height: auto; display: block; margin: 0 auto; }
   .ref { text-align: center; padding: 14px; border-bottom: 2px dashed #B9B4A2; }
   .ref .label { font-size: 11px; color: #8A968E; }
   .ref .code { font-family: 'Prompt', monospace; font-size: 24px; font-weight: 800; letter-spacing: 1px; }
@@ -233,7 +232,7 @@ export const printSlip = (b, court, member, lang) => {
   .noprint { display: block; margin: 16px auto 0; padding: 10px 24px; font-family: 'Prompt', Tahoma, sans-serif; font-weight: 700; border: 2px solid #101B14; border-radius: 999px; background: #C6F135; cursor: pointer; }
 </style></head><body>
 <div class="slip">
-  <div class="head"><h1><img src="${esc(window.location.origin)}/ball.png" width="22" height="22" alt="" /> BOUNCE</h1><small>PICKLEBALL HOUSE</small></div>
+  <div class="head"><img class="brand" src="${esc(window.location.origin)}/logo-light.png" alt="Bounce Pickleball House" /></div>
   <div class="ref"><div class="label">${th ? 'หมายเลขการจอง' : 'Booking Reference'}</div><div class="code">${esc(b.ref)}</div></div>
   <div class="rows">
     <div class="row"><span class="k">${th ? 'ผู้จอง' : 'Customer'}</span><span class="v">${esc(member?.name ?? '—')}</span></div>
@@ -250,12 +249,18 @@ export const printSlip = (b, court, member, lang) => {
 </body></html>`)
   w.document.close()
   // bind from opener — inline onclick would be blocked by CSP (script-src 'self')
-  setTimeout(() => {
+  const bindAndPrint = () => {
     try {
       w.document.querySelector('.noprint')?.addEventListener('click', () => w.print())
       w.focus(); w.print()
     } catch { /* user closed */ }
-  }, 450)
+  }
+  const logo = w.document.querySelector('.brand')
+  if (!logo || logo.complete) setTimeout(bindAndPrint, 80)
+  else {
+    logo.addEventListener('load', () => setTimeout(bindAndPrint, 80), { once: true })
+    logo.addEventListener('error', () => setTimeout(bindAndPrint, 80), { once: true })
+  }
 }
 
 // ── pagination ────────────────────────────────────────────────────────────

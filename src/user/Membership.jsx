@@ -1,12 +1,17 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { StampCard, ChannelChip, Icon, AvatarGlyph } from '../components/ui.jsx'
+import { LegalHtml } from '../components/LegalHtml.jsx'
+import { legalHasText, pickLegal } from '../legalHtml.js'
 
 export default function Membership() {
-  const { lang, user, vouchers, stampLog, logout } = useStore()
+  const { lang, user, vouchers, stampLog, logout, settings } = useStore()
   const myVouchers = vouchers.filter((v) => v.userId === user.id)
   const myLog = stampLog.filter((s) => s.userId === user.id)
+  const payTerms = pickLegal(settings, 'payTerms', lang)
+  const appTerms = pickLegal(settings, 'appTerms', lang)
+  const [tab, setTab] = useState('history')
 
   return (
     <div className="page">
@@ -54,19 +59,53 @@ export default function Membership() {
         ))}
       </div>
 
-      <h3 className="mt-6" style={{ fontSize: 16 }}>{t('stampHistory', lang)}</h3>
-      <div className="card-flat mt-2">
-        {myLog.length === 0 && <div className="pad-4 tc tiny">—</div>}
-        {myLog.map((s, i) => (
-          <div key={s.id} className="row between pad-3" style={{ borderTop: i ? '1px solid #E3E1D5' : 'none', fontSize: 13.5 }}>
-            <div>
-              <div style={{ fontWeight: 600 }}>{s.note}</div>
-              <div className="tiny">{fmtDate(s.date, lang)} · {s.by}</div>
-            </div>
-            <span className={`chip ${s.delta > 0 ? 'chip-green' : 'chip-red'}`}>{s.delta > 0 ? '+' : ''}{s.delta} <Icon name="ball" size={13} /></span>
-          </div>
-        ))}
+      <div className="tabs tabs-split mt-6" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === 'history'}
+          className={`tab ${tab === 'history' ? 'on' : ''}`}
+          onClick={() => setTab('history')}>
+          {t('profileTabHistory', lang)}
+        </button>
+        <button type="button" role="tab" aria-selected={tab === 'terms'}
+          className={`tab ${tab === 'terms' ? 'on' : ''}`}
+          onClick={() => setTab('terms')}>
+          {t('profileTabTerms', lang)}
+        </button>
       </div>
+
+      {tab === 'history' && (
+        <div className="card-flat mt-2">
+          {myLog.length === 0 && <div className="pad-4 tc tiny">{t('noStampHistory', lang)}</div>}
+          {myLog.map((s, i) => (
+            <div key={s.id} className="row between pad-3" style={{ borderTop: i ? '1px solid #E3E1D5' : 'none', fontSize: 13.5 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{s.note}</div>
+                <div className="tiny">{fmtDate(s.date, lang)} · {s.by}</div>
+              </div>
+              <span className={`chip ${s.delta > 0 ? 'chip-green' : 'chip-red'}`}>{s.delta > 0 ? '+' : ''}{s.delta} <Icon name="ball" size={13} /></span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === 'terms' && (
+        <div className="card-flat mt-2 pad-4 col gap-4">
+          {legalHasText(appTerms) && (
+            <div>
+              <h3 style={{ fontSize: 15 }}>{t('appTermsTitle', lang)}</h3>
+              <div className="mt-2"><LegalHtml html={appTerms} /></div>
+            </div>
+          )}
+          {legalHasText(payTerms) && (
+            <div>
+              <h3 style={{ fontSize: 15 }}>{t('payTermsTitle', lang)}</h3>
+              <div className="mt-2"><LegalHtml html={payTerms} /></div>
+            </div>
+          )}
+          {!legalHasText(appTerms) && !legalHasText(payTerms) && (
+            <div className="tc tiny">{t('noTermsYet', lang)}</div>
+          )}
+        </div>
+      )}
 
       <h3 className="mt-6" style={{ fontSize: 16 }}>{t('linkedAccounts', lang)}</h3>
       <div className="card-flat pad-4 mt-2 row gap-2 wrap">

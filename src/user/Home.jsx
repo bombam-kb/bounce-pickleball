@@ -4,12 +4,15 @@ import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
 import { todayISO, addDays, isPeak, sortSlotItems } from '../data/index.js'
 import { Icon, CalendarModal } from '../components/ui.jsx'
+import { TermsReadGate } from '../components/LegalHtml.jsx'
+import { legalHasText, pickLegal } from '../legalHtml.js'
 
 export default function Home({ onCheckout, cartHost }) {
   const { lang, courts, slotStatus, loadTakenSlots, settings } = useStore()
   const [date, setDate] = useState(todayISO())
   const [calOpen, setCalOpen] = useState(false)
   const [selected, setSelected] = useState([]) // [{ courtId, hour }]
+  const [payGate, setPayGate] = useState(false)
   const today = todayISO()
   const maxDate = addDays(today, settings.advanceBookingDays - 1)
 
@@ -59,7 +62,16 @@ export default function Home({ onCheckout, cartHost }) {
   }
   const total = selected.reduce((s, x) => s + priceOf(x.courtId, x.hour), 0)
 
-  const checkout = () => onCheckout({ date, items: sortSlotItems(selected, courtOrder) })
+  const checkout = () => {
+    const cart = { date, items: sortSlotItems(selected, courtOrder) }
+    const payTerms = pickLegal(settings, 'payTerms', lang)
+    if (legalHasText(payTerms)) { setPayGate(true); return }
+    onCheckout(cart)
+  }
+  const acceptPayTerms = () => {
+    setPayGate(false)
+    onCheckout({ date, items: sortSlotItems(selected, courtOrder) })
+  }
 
   const cartBar = selected.length > 0 && (
     <div className="cart-bar">
@@ -72,7 +84,7 @@ export default function Home({ onCheckout, cartHost }) {
           <button className="btn btn-ghost btn-sm" style={{ color: 'var(--cream)' }} onClick={() => setSelected([])}>
             {t('clearSelection', lang)}
           </button>
-          <button className="btn btn-lime" onClick={checkout}>{t('confirmBooking', lang)}</button>
+          <button className="btn btn-lime" onClick={checkout}>{t('next', lang)}</button>
         </div>
       </div>
     </div>
@@ -142,6 +154,16 @@ export default function Home({ onCheckout, cartHost }) {
           </table>
         </div>
       </div>
+
+      {payGate && (
+        <TermsReadGate
+          html={pickLegal(settings, 'payTerms', lang)}
+          title={t('payTermsTitle', lang)}
+          lang={lang}
+          onAccept={acceptPayTerms}
+          onClose={() => setPayGate(false)}
+        />
+      )}
 
       {cartBar && cartHost && createPortal(cartBar, cartHost)}
       {selected.length > 0 && <div className="cart-bar-spacer" />}
