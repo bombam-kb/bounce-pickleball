@@ -95,12 +95,12 @@ export default function Membership() {
               <div className="mt-2"><LegalHtml html={appTerms} /></div>
             </div>
           )}
-          {legalHasText(payTerms) && (
+          {/* {legalHasText(payTerms) && (
             <div>
               <h3 style={{ fontSize: 15 }}>{t('payTermsTitle', lang)}</h3>
               <div className="mt-2"><LegalHtml html={payTerms} /></div>
             </div>
-          )}
+          )} */}
           {!legalHasText(appTerms) && !legalHasText(payTerms) && (
             <div className="tc tiny">{t('noTermsYet', lang)}</div>
           )}
