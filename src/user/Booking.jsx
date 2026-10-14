@@ -229,7 +229,7 @@ export default function Booking({ cart, onDone, onBack }) {
     return { ...it, court, peak, price: peak ? (court?.pricePeak ?? 0) : (court?.priceOff ?? 0) }
   })
   const subtotal = priced.reduce((s, x) => s + x.price, 0)
-  const myVouchers = vouchers.filter((v) => v.userId === user?.id && !v.used)
+  const myVouchers = vouchers.filter((v) => v.userId === user?.id && !v.used && !v.revoked)
   const cheapestOffPeakIdx = priced.reduce((best, it, i) => {
     if (it.peak) return best
     if (best < 0) return i

@@ -4,10 +4,11 @@ import { t, fmtDate } from '../i18n.js'
 import { StampCard, ChannelChip, Icon, AvatarGlyph } from '../components/ui.jsx'
 import { LegalHtml } from '../components/LegalHtml.jsx'
 import { legalHasText, pickLegal } from '../legalHtml.js'
+import { formatAccountNo } from '../data/index.js'
 
 export default function Membership() {
   const { lang, user, vouchers, stampLog, logout, settings } = useStore()
-  const myVouchers = vouchers.filter((v) => v.userId === user.id)
+  const myVouchers = vouchers.filter((v) => v.userId === user.id && !v.revoked)
   const myLog = stampLog.filter((s) => s.userId === user.id)
   const payTerms = pickLegal(settings, 'payTerms', lang)
   const appTerms = pickLegal(settings, 'appTerms', lang)
@@ -24,6 +25,7 @@ export default function Membership() {
           }}><AvatarGlyph avatar={user.avatar} size={28} /></div>
           <div className="flex-1">
             <h2 style={{ fontSize: 19, color: 'var(--lime)' }}>{user.name}</h2>
+            {user.accountNo ? <div className="acct-no" style={{ color: 'var(--lime)' }}>{formatAccountNo(user.accountNo)}</div> : null}
             <div className="tiny" style={{ color: 'var(--cream)', opacity: 0.8 }}>{user.email}</div>
             <div className="tiny mt-1" style={{ color: 'var(--cream)' }}>
               {t('bookingsPerYear', lang)}: <b>{user.bookingsYear}</b>

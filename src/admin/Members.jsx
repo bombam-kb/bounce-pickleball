@@ -1,31 +1,36 @@
 import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
+import { memberMatches, formatAccountNo } from '../data/index.js'
 import { Icon, Modal, ChannelChip, StampCard, AvatarGlyph, downloadCSV, usePager, Pager } from '../components/ui.jsx'
 
 export default function Members() {
-  const { lang, members, updateMember, stampLog, adminAdjustStamps, adminMergeMembers, adminLog, logAdmin } = useStore()
+  const { lang, members, vouchers, updateMember, stampLog, adminAdjustStamps, adminAdjustVouchers, adminMergeMembers, adminLog, logAdmin } = useStore()
   const [q, setQ] = useState('')
   const [fChannel, setFChannel] = useState('all')
   const [detail, setDetail] = useState(null)
   const [adjust, setAdjust] = useState(null)
   const [mergeFrom, setMergeFrom] = useState('')
   const [mergeBusy, setMergeBusy] = useState(false)
+  const [adjustBusy, setAdjustBusy] = useState(false)
 
   const rows = members
     .filter((m) => fChannel === 'all' || m.channel === fChannel)
-    .filter((m) => !q || (m.name + m.email).toLowerCase().includes(q.toLowerCase()))
+    .filter((m) => memberMatches(m, q))
 
   const pager = usePager(rows, 10)
   const logPager = usePager(adminLog, 8)
 
   const m = detail ? members.find((x) => x.id === detail) : null
+  const unusedCoupons = m
+    ? vouchers.filter((v) => v.userId === m.id && !v.used && !v.revoked).length
+    : 0
 
   const exportCsv = () => {
     downloadCSV('bounce-members.csv', [
-      ['Name', 'Email', 'Phone', 'Channel', 'Country', 'Stamps', 'Bookings/Year', 'Suspended'],
+      ['Account No', 'Name', 'Email', 'Phone', 'Channel', 'Country', 'Stamps', 'Bookings/Year', 'Suspended'],
       ...rows.map((x) => [
-        x.name, x.email, x.phone, x.channel, x.country,
+        x.accountNo || '', x.name, x.email, x.phone, x.channel, x.country,
         x.stamps, x.bookingsYear, x.suspended ? 'yes' : 'no',
       ]),
     ])
@@ -45,7 +50,7 @@ export default function Members() {
       </div>
 
       <div className="row wrap gap-2 mt-4">
-        <input className="input" style={{ maxWidth: 220 }} maxLength={60} placeholder={`${t('search', lang)}…`}
+        <input className="input" style={{ maxWidth: 320 }} maxLength={60} placeholder={t('searchMember', lang)}
           value={q} onChange={(e) => setQ(e.target.value)} />
         <select className="select" style={{ maxWidth: 160 }} value={fChannel} onChange={(e) => setFChannel(e.target.value)}>
           <option value="all">{t('all', lang)} — {t('channel', lang)}</option>
@@ -67,7 +72,11 @@ export default function Members() {
                   <td>
                     <div className="row gap-2">
                       <span><AvatarGlyph avatar={x.avatar} size={18} /></span>
-                      <div><b>{x.name}</b><div className="tiny">{x.email} · {x.country}{x.channel === 'line' ? ` · ${x.id}` : ''}</div></div>
+                      <div>
+                        <b>{x.name}</b>
+                        <div className="tiny">{[x.email, x.country].filter(Boolean).join(' · ') || '—'}</div>
+                        {x.accountNo ? <div className="acct-no">{formatAccountNo(x.accountNo)}</div> : null}
+                      </div>
                     </div>
                   </td>
                   <td><ChannelChip channel={x.channel} /></td>
@@ -105,13 +114,14 @@ export default function Members() {
             <span><AvatarGlyph avatar={m.avatar} size={34} /></span>
             <div className="flex-1">
               <h3 style={{ fontSize: 18 }}>{m.name}</h3>
-              <div className="tiny">{m.email} {m.phone && `· ${m.phone}`}</div>
-              <div className="tiny num">{m.id}</div>
+              <div className="tiny">{[m.email, m.phone].filter(Boolean).join(' · ') || '—'}</div>
+              {m.accountNo ? <div className="acct-no acct-no-lg">{formatAccountNo(m.accountNo)}</div> : null}
             </div>
           </div>
 
           <div className="row gap-2 mt-3 wrap">
             <span className="chip chip-lime num"><Icon name="ball" size={13} /> {m.stamps}/10</span>
+            <span className="chip chip-grey num" title={t('couponsLeft', lang)}><Icon name="ticket" size={13} /> {unusedCoupons}</span>
             <span className="chip chip-grey num">{t('bookingsPerYear', lang)}: {m.bookingsYear}</span>
             <ChannelChip channel={m.channel} />
           </div>
@@ -132,7 +142,8 @@ export default function Members() {
           {!adjust && (
             <div className="act-row">
               <span className="act-label">{lang === 'th' ? 'จัดการ' : 'Actions'}</span>
-              <button className="btn btn-sm btn-lime" onClick={() => setAdjust({ delta: 1, reason: '' })}><Icon name="ball" size={14} /> {t('adjustStamps', lang)}</button>
+              <button className="btn btn-sm btn-lime" onClick={() => setAdjust({ kind: 'stamps', delta: 1, reason: '' })}><Icon name="ball" size={14} /> {t('adjustStamps', lang)}</button>
+              <button className="btn btn-sm" onClick={() => setAdjust({ kind: 'coupons', delta: unusedCoupons > 0 ? -1 : 1, reason: '' })}><Icon name="ticket" size={14} /> {t('adjustCoupons', lang)}</button>
               <button className={`btn btn-sm ${m.suspended ? '' : 'btn-danger'}`} onClick={() => toggleSuspend(m)}>
                 <Icon name={m.suspended ? 'check' : 'block'} size={14} />
                 {m.suspended ? t('unsuspend', lang) : t('suspend', lang)}
@@ -148,7 +159,7 @@ export default function Members() {
                 <option value="">—</option>
                 {members.filter((x) => x.id !== m.id).map((x) => (
                   <option key={x.id} value={x.id}>
-                    {x.name} · {x.channel} · {x.stamps}/10 · {x.id}
+                    {x.name} · {x.accountNo ? `${formatAccountNo(x.accountNo)} · ` : ''}{x.channel} · {x.stamps}/10
                   </option>
                 ))}
               </select>
@@ -172,19 +183,41 @@ export default function Members() {
 
           {adjust && (
             <div className="card-flat pad-4 mt-4">
-              <h4 style={{ fontSize: 14 }}>{t('adjustStamps', lang)}</h4>
+              <h4 style={{ fontSize: 14 }}>{adjust.kind === 'coupons' ? t('adjustCoupons', lang) : t('adjustStamps', lang)}</h4>
+              {adjust.kind === 'coupons' && <p className="tiny mt-1">{t('couponAdjustHint', lang)} · {t('couponsLeft', lang)}: <b className="num">{unusedCoupons}</b></p>}
               <div className="row gap-2 mt-2">
                 {[-1, 1].map((d) => (
-                  <button key={d} className={`btn btn-sm ${adjust.delta === d ? 'btn-pine' : ''}`}
+                  <button key={d} type="button" className={`btn btn-sm ${adjust.delta === d ? 'btn-pine' : ''}`}
+                    style={{ minHeight: 44, minWidth: 52 }}
+                    disabled={adjust.kind === 'coupons' && d < 0 && unusedCoupons < 1}
                     onClick={() => setAdjust((a) => ({ ...a, delta: d }))}>{d > 0 ? '+1' : '−1'}</button>
                 ))}
-                <input className="input flex-1" maxLength={120} placeholder={t('reason', lang)} value={adjust.reason}
-                  onChange={(e) => setAdjust((a) => ({ ...a, reason: e.target.value }))} />
               </div>
+              <input className="input mt-2" maxLength={120} placeholder={t('reason', lang)} value={adjust.reason}
+                onChange={(e) => setAdjust((a) => ({ ...a, reason: e.target.value }))} />
               <div className="row gap-2 mt-2">
-                <button className="btn btn-sm btn-lime" disabled={!adjust.reason}
-                  onClick={() => { adminAdjustStamps(m.id, adjust.delta, adjust.reason); setAdjust(null) }}>{t('confirm', lang)}</button>
-                <button className="btn btn-sm btn-ghost" onClick={() => setAdjust(null)}>{t('cancel', lang)}</button>
+                <button className="btn btn-sm btn-lime" style={{ minHeight: 44 }} disabled={!adjust.reason || adjustBusy || (adjust.kind === 'coupons' && adjust.delta < 0 && unusedCoupons < 1)}
+                  onClick={async () => {
+                    setAdjustBusy(true)
+                    try {
+                      if (adjust.kind === 'coupons') {
+                        const r = await adminAdjustVouchers(m.id, adjust.delta, adjust.reason)
+                        if (r?.error === 'none') {
+                          alert(t('noCouponToReduce', lang))
+                          return
+                        }
+                      } else {
+                        await adminAdjustStamps(m.id, adjust.delta, adjust.reason)
+                      }
+                      setAdjust(null)
+                    } catch (e) {
+                      console.error('[Bounce] adjust', e)
+                      alert(t('adjustFailed', lang))
+                    } finally {
+                      setAdjustBusy(false)
+                    }
+                  }}>{t('confirm', lang)}</button>
+                <button className="btn btn-sm btn-ghost" style={{ minHeight: 44 }} onClick={() => setAdjust(null)}>{t('cancel', lang)}</button>
               </div>
             </div>
           )}

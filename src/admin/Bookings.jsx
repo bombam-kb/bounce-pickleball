@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate, DICT } from '../i18n.js'
 import { Icon, Modal, StatusChip, hourLabel, AvatarGlyph, downloadCSV, usePager, Pager } from '../components/ui.jsx'
+import { memberMatches, formatAccountNo } from '../data/index.js'
 import BookForCustomerModal from './BookFor.jsx'
 
 // "2026-07-12T21:47" → "อา. 12 ก.ค. · 21:47" (seed data may be date-only)
@@ -72,7 +73,8 @@ export default function Bookings() {
   const [bookForOpen, setBookForOpen] = useState(false)
   const [slipFor, setSlipFor] = useState(null)
 
-  const memberName = (b) => members.find((x) => x.id === b.userId)?.name ?? ''
+  const memberOf = (b) => members.find((x) => x.id === b.userId)
+  const memberName = (b) => memberOf(b)?.name ?? ''
   const courtName = (b) => {
     const c = courts.find((x) => x.id === b.courtId)
     return c ? (lang === 'th' ? c.nameTh : c.name) : ''
@@ -94,7 +96,12 @@ export default function Bookings() {
     .filter((b) => fStatus === 'all' || b.status === fStatus)
     .filter((b) => !fSlotDate || b.date === fSlotDate)
     .filter((b) => !fCreatedDate || (b.createdAt ?? '').slice(0, 10) === fCreatedDate)
-    .filter((b) => !q || (memberName(b) + b.ref).toLowerCase().includes(q.toLowerCase()))
+    .filter((b) => {
+      if (!q.trim()) return true
+      const m = memberOf(b)
+      if (m && memberMatches(m, q)) return true
+      return b.ref.toLowerCase().includes(q.trim().toLowerCase())
+    })
     .sort((a, b) => {
       const get = SORTERS[sort.key]
       const va = get(a), vb = get(b)
@@ -138,7 +145,7 @@ export default function Bookings() {
       <div className="row wrap gap-3 mt-4" style={{ alignItems: 'flex-end' }}>
         <div>
           <label className="label">{t('search', lang)}</label>
-          <input className="input" style={{ maxWidth: 220 }} maxLength={60} placeholder={`${t('search', lang)}…`}
+          <input className="input" style={{ maxWidth: 280 }} maxLength={60} placeholder={t('searchBooking', lang)}
             value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div>
@@ -187,7 +194,15 @@ export default function Bookings() {
                 return (
                   <tr key={b.id}>
                     <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(b.date, lang)} · <b className="num">{hourLabel(b.hour)}</b></td>
-                    <td><span className="row gap-1" style={{ alignItems: 'center' }}><AvatarGlyph avatar={m?.avatar} size={16} /> {m?.name}</span></td>
+                    <td>
+                      <span className="row gap-2" style={{ alignItems: 'center' }}>
+                        <AvatarGlyph avatar={m?.avatar} size={16} />
+                        <span style={{ minWidth: 0 }}>
+                          <div>{m?.name || '—'}</div>
+                          {m?.accountNo ? <div className="acct-no">{formatAccountNo(m.accountNo)}</div> : null}
+                        </span>
+                      </span>
+                    </td>
                     <td>{courtName(b) || '—'}</td>
                     <td className="num">{b.voucherUsed || b.total === 0 ? t('free', lang) : `฿${b.total}`}</td>
                     <td><StatusChip status={b.status} lang={lang} /></td>

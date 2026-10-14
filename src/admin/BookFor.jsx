@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
-import { todayISO, isPeak, sortSlotItems } from '../data/index.js'
+import { todayISO, isPeak, sortSlotItems, memberMatches, formatAccountNo } from '../data/index.js'
 import { Icon, Modal, hourLabel, AvatarGlyph } from '../components/ui.jsx'
 
 // "จองให้ลูกค้า" — admin books one or more slots for a phone/walk-in customer
@@ -24,8 +24,7 @@ export default function BookForCustomerModal({ onClose, seed }) {
 
   const court = courts.find((c) => c.id === courtId)
   const matches = q.trim()
-    ? members.filter((m) => !m.suspended &&
-        (m.name + m.email + m.phone).toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8)
+    ? members.filter((m) => !m.suspended && memberMatches(m, q)).slice(0, 8)
     : []
 
   const priceOf = (p) => {
@@ -112,7 +111,10 @@ export default function BookForCustomerModal({ onClose, seed }) {
         </div>
       ) : customer ? (
         <div className="card-flat pad-3 row between">
-          <span className="row gap-1" style={{ alignItems: 'center' }}><AvatarGlyph avatar={customer.avatar} size={16} /> <b>{customer.name}</b> <span className="tiny muted">· {customer.email}</span></span>
+          <span className="row gap-1" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <AvatarGlyph avatar={customer.avatar} size={16} /> <b>{customer.name}</b>
+            {customer.accountNo ? <span className="acct-no">{formatAccountNo(customer.accountNo)}</span> : null}
+          </span>
           <button className="btn btn-sm btn-ghost" onClick={() => { setCustomer(null); setQ('') }}>{t('changeCustomer', lang)}</button>
         </div>
       ) : (
@@ -122,10 +124,16 @@ export default function BookForCustomerModal({ onClose, seed }) {
           {q.trim() && (
             <div className="card-flat mt-2" style={{ maxHeight: 220, overflowY: 'auto' }}>
               {matches.map((m) => (
-                <button key={m.id} className="row between pad-3" style={{ width: '100%', textAlign: 'left', borderBottom: '1px solid #E3E1D5' }}
+                <button key={m.id} type="button" className="pad-3" style={{ width: '100%', textAlign: 'left', borderBottom: '1px solid #E3E1D5', minHeight: 44 }}
                   onClick={() => setCustomer(m)}>
-                  <span className="row gap-1" style={{ alignItems: 'center' }}><AvatarGlyph avatar={m.avatar} size={16} /> <b>{m.name}</b></span>
-                  <span className="tiny muted">{m.email || m.phone}</span>
+                  <span className="row gap-2" style={{ alignItems: 'center' }}>
+                    <AvatarGlyph avatar={m.avatar} size={16} />
+                    <span className="flex-1" style={{ minWidth: 0 }}>
+                      <b>{m.name}</b>
+                      {m.accountNo ? <div className="acct-no">{formatAccountNo(m.accountNo)}</div> : null}
+                      {(m.email || m.phone) && <div className="tiny">{m.email || m.phone}</div>}
+                    </span>
+                  </span>
                 </button>
               ))}
               {matches.length === 0 && <div className="tc tiny muted pad-4">{t('noCustomerFound', lang)}</div>}

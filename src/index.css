@@ -313,10 +313,27 @@ a { color: inherit; }
   min-height: 34px;
 }
 .u-hello {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 1px;
   font-family: var(--font-display); font-weight: 800; font-size: 22px;
   color: var(--ink); flex: 1; min-width: 0; line-height: 1.15;
+}
+.u-hello-name {
+  display: block; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.u-hello-no {
+  display: block;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.01em;
+  color: var(--ink-2); line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.acct-no {
+  font-family: var(--font-display); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px; color: var(--ink); letter-spacing: 0.02em; line-height: 1.3;
+}
+.acct-no-lg { font-size: 16px; margin-top: 2px; }
 .u-head-tools-end {
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
   margin-left: auto; flex-shrink: 0;
@@ -703,6 +720,7 @@ a { color: inherit; }
   border-top: 2px dashed #D8D4C2;
   margin-top: 14px; padding-top: 12px;
 }
+.act-row .btn { min-height: 44px; }
 .act-label {
   font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
   color: var(--ink-3); text-transform: uppercase;

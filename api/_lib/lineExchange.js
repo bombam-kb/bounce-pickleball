@@ -12,6 +12,7 @@ import {
   getEnv, initAdmin, readJsonBody, jsonSender, clientIp, rateLimitDocId,
   assertRateLimit, bumpRateLimit,
 } from './serverAdmin.js'
+import { ensureMemberAccountNo } from './accountNo.js'
 
 const LINE_FAIL_LIMIT = 20
 const LINE_FAIL_WINDOW_MS = 60 * 60 * 1000
@@ -200,6 +201,12 @@ export async function handleLineExchange(req, res) {
       const cur = snap.data() || {}
       if (!cur.name) patch.name = name
       await ref.update(patch)
+    }
+
+    try {
+      await ensureMemberAccountNo(db, ref)
+    } catch (e) {
+      console.error('[line-auth] account number', e)
     }
 
     if (snap.exists && snap.data()?.suspended) {

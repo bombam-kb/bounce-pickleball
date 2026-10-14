@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
+import { formatAccountNo } from '../data/index.js'
 import { Icon, Modal } from '../components/ui.jsx'
 import Logo from '../components/Logo.jsx'
 import Home from './Home.jsx'
@@ -51,7 +52,8 @@ export default function UserApp() {
             </button>
           ) : user ? (
             <span className="u-hello">
-              {lang === 'th' ? `สวัสดี ${user.name}` : `Hi ${user.name}`}
+              <span className="u-hello-name">{lang === 'th' ? `สวัสดี ${user.name}` : `Hi ${user.name}`}</span>
+              {user.accountNo ? <span className="u-hello-no">{formatAccountNo(user.accountNo)}</span> : null}
             </span>
           ) : (
             <span />

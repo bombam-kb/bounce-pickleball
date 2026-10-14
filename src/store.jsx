@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
   sendEmailVerification, sendPasswordResetEmail, onAuthStateChanged, updateProfile,
@@ -6,7 +6,7 @@ import {
 } from 'firebase/auth'
 import {
   collection, doc, getDoc, getDocs, onSnapshot,
-  setDoc, updateDoc, deleteDoc, writeBatch, query, where,
+  setDoc, updateDoc, deleteDoc, writeBatch, query, where, runTransaction,
 } from 'firebase/firestore'
 import { auth, db, firebaseReady } from './firebase.js'
 import {
@@ -58,6 +58,7 @@ export function StoreProvider({ children }) {
   const [isAdmin, setIsAdmin] = useState(false)    // current auth user is staff (in admins/)
   const [authUid, setAuthUid] = useState(null)     // signed-in Firebase uid — drives private listeners
   const [authReady, setAuthReady] = useState(false)
+  const accountAttempt = useRef('')
   const [notifications, setNotifications] = useState(() => {
     try { return JSON.parse(localStorage.getItem('bounce_notifs') || '[]') } catch { return [] }
   })
@@ -376,6 +377,24 @@ export function StoreProvider({ children }) {
     return json
   }, [])
 
+  // Shop account numbers (No. 10001…). Assigned on the server so two people
+  // cannot take the same number. Staff backfill runs once per missing set;
+  // a customer only asks for their own.
+  useEffect(() => {
+    if (!firebaseReady || !authReady) return
+    const missingKey = isAdmin
+      ? members.filter((m) => !m.accountNo).map((m) => m.id).sort().join(',')
+      : (user && !user.accountNo ? user.id : '')
+    if (!missingKey) {
+      accountAttempt.current = ''
+      return
+    }
+    if (accountAttempt.current === missingKey) return
+    accountAttempt.current = missingKey
+    apiPost('/api/account/ensure', isAdmin ? { all: true } : {})
+      .catch((e) => console.error('[Bounce] account number', e))
+  }, [firebaseReady, authReady, isAdmin, members, user, apiPost])
+
   // Occupancy for the booking grid. Customers can only read their own
   // bookings, so which slots *other* people took comes from /api/slots/taken —
   // court, date and hour only, no names or amounts. Staff already hold the
@@ -596,6 +615,39 @@ export function StoreProvider({ children }) {
     await logAdmin(`Adjust stamps ${delta > 0 ? '+' : ''}${delta} for ${userId} — ${reason}`)
   }, [addStamp, logAdmin])
 
+  // Add one free-hour code, or revoke one unused code. Revoked codes are
+  // marked used so checkout rejects them, and `revoked` keeps them out of
+  // the customer's "used" list.
+  const adminAdjustVouchers = useCallback(async (userId, delta, reason) => {
+    if (delta !== 1 && delta !== -1) return { error: 'bad' }
+    const member = members.find((m) => m.id === userId)
+    const who = member?.accountNo ? `${member.name} (No. ${member.accountNo})` : (member?.name || userId)
+    if (delta > 0) {
+      await setDoc(doc(db, 'vouchers', nid('v')), {
+        userId, issued: todayISO(), expiry: null, used: false, source: 'admin', note: reason,
+      })
+    } else {
+      const snap = await getDocs(query(collection(db, 'vouchers'), where('userId', '==', userId)))
+      const unused = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((v) => !v.used && !v.revoked)
+        .sort((a, b) => String(b.issued || '').localeCompare(String(a.issued || '')) || b.id.localeCompare(a.id))
+      const target = unused[0]
+      if (!target) return { error: 'none' }
+      const revoked = await runTransaction(db, async (tx) => {
+        const fresh = await tx.get(doc(db, 'vouchers', target.id))
+        if (!fresh.exists() || fresh.data()?.used || fresh.data()?.revoked) return false
+        tx.update(fresh.ref, {
+          used: true, revoked: true, revokedAt: todayISO(), revokedReason: reason,
+        })
+        return true
+      })
+      if (!revoked) return { error: 'none' }
+    }
+    await logAdmin(`Adjust coupons ${delta > 0 ? '+' : ''}${delta} for ${who} — ${reason}`)
+    return { ok: true }
+  }, [members, logAdmin])
+
   // Move bookings / codes / stamps from one member onto another (LINE channel switch).
   const adminMergeMembers = useCallback(async (fromId, intoId) => {
     if (!fromId || !intoId || fromId === intoId) return { error: 'same' }
@@ -642,7 +694,7 @@ export function StoreProvider({ children }) {
     registerEmail, loginEmail, requestReset, resendVerification,
     notifications, notify, markNotifsRead,
     slotStatus, loadTakenSlots, createMultiBooking, cancelBooking, fetchSlipUrl,
-    adminAdjustStamps, adminCreateMultiBooking, adminMergeMembers,
+    adminAdjustStamps, adminAdjustVouchers, adminCreateMultiBooking, adminMergeMembers,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

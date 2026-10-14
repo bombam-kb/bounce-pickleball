@@ -114,6 +114,10 @@ async function testRules(token, victimVoucherId) {
     fields: fields({ stamps: 99 }),
   })), 'cannot raise its own stamp count')
 
+  record(denied(await fsReq(token, 'PATCH', `/members/${ATTACKER}?updateMask.fieldPaths=accountNo`, {
+    fields: fields({ accountNo: 10001 }),
+  })), 'cannot set its own account number')
+
   const profile = await fsReq(token, 'PATCH', `/members/${ATTACKER}?updateMask.fieldPaths=name`, {
     fields: fields({ name: 'Renamed by owner' }),
   })
@@ -208,6 +212,14 @@ async function testSignup() {
       avatar: '🏓', stamps: 99, bookingsYear: 0, suspended: false, joined: '2026-01-01', birthday: null,
     }),
   })), 'cannot register with pre-loaded stamps')
+
+  record(denied(await fsReq(token, 'POST', `/members?documentId=${NEWCOMER}`, {
+    fields: fields({
+      name: 'Cheater', email: '', phone: '', channel: 'email', country: 'TH', lang: 'th',
+      avatar: '🏓', stamps: 0, bookingsYear: 0, suspended: false, accountNo: 10001,
+      joined: '2026-01-01', birthday: null,
+    }),
+  })), 'cannot pick its own account number at sign-up')
 
   const clean = await fsReq(token, 'POST', `/members?documentId=${NEWCOMER}`, {
     fields: fields({

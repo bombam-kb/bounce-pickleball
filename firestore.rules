@@ -24,7 +24,9 @@ service cloud.firestore {
     function freshMember() {
       return request.resource.data.stamps == 0
         && request.resource.data.bookingsYear == 0
-        && request.resource.data.suspended == false;
+        && request.resource.data.suspended == false
+        // shop account numbers are assigned by /api/account/ensure, never chosen at sign-up
+        && !('accountNo' in request.resource.data);
     }
 
     // a customer may only read rows that belong to them. Queries must say so

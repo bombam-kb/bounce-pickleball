@@ -301,7 +301,7 @@ export async function handleBookingPay(req, res) {
     if (voucherId) {
       const vSnap = await db.collection('vouchers').doc(voucherId).get()
       const v = vSnap.exists ? (vSnap.data() || {}) : null
-      if (!v || v.userId !== uid || v.used) throw httpError(400, 'voucher_invalid')
+      if (!v || v.userId !== uid || v.used || v.revoked) throw httpError(400, 'voucher_invalid')
       if (v.expiry && v.expiry < todayISO()) throw httpError(400, 'voucher_invalid')
     }
     const cheapestIdx = voucherId
@@ -371,7 +371,7 @@ export async function handleBookingPay(req, res) {
       const vRef = voucherId ? db.collection('vouchers').doc(voucherId) : null
       if (vRef) {
         const v = await tx.get(vRef)
-        if (!v.exists || v.data()?.userId !== uid || v.data()?.used) throw httpError(400, 'voucher_invalid')
+        if (!v.exists || v.data()?.userId !== uid || v.data()?.used || v.data()?.revoked) throw httpError(400, 'voucher_invalid')
       }
       const dates = [...new Set(lines.map((l) => l.date))]
       const live = new Set()

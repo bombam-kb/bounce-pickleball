@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate, DAY_NAMES } from '../i18n.js'
-import { todayISO, addDays, isPeak } from '../data/index.js'
+import { todayISO, addDays, isPeak, formatAccountNo } from '../data/index.js'
 import { Icon, Modal, StatusChip, hourLabel, hourRangeLabel, CalendarModal, AvatarGlyph } from '../components/ui.jsx'
 import BookForCustomerModal from './BookFor.jsx'
 
@@ -226,9 +226,10 @@ export default function CourtQueue() {
           <div className="card-flat pad-4 mt-3 col gap-2">
             <div className="row between">
               <span className="tiny muted">{t('customer', lang)}</span>
-              <b className="row gap-1" style={{ alignItems: 'center' }}>
+              <b className="row gap-1" style={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <AvatarGlyph avatar={detail.member?.avatar} size={16} />
                 {detail.member?.name || '—'}
+                {detail.member?.accountNo ? <span className="acct-no">{formatAccountNo(detail.member.accountNo)}</span> : null}
               </b>
             </div>
             <div className="row between">

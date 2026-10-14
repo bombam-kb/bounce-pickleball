@@ -22,6 +22,23 @@ const T = todayISO()
 
 export const genRef = () => 'BNC-' + Math.random().toString(36).slice(2, 8).toUpperCase()
 
+/** Shop account number, shown as on the member card: "No. 10001". */
+export const formatAccountNo = (n) => (n ? `No. ${n}` : '')
+
+/** Name, email, phone, account number, or id. "No. 10001" matches 10001. */
+export const memberMatches = (m, q) => {
+  const raw = String(q || '').trim().toLowerCase()
+  if (!raw) return true
+  const needle = raw.replace(/^no\.?\s*/, (prefix, _o, str) => (
+    /^\d/.test(str.slice(prefix.length)) ? '' : prefix
+  ))
+  const hay = [m?.name, m?.email, m?.phone, m?.accountNo, m?.id]
+    .filter((x) => x != null && x !== '')
+    .join(' ')
+    .toLowerCase()
+  return hay.includes(needle)
+}
+
 // local datetime "YYYY-MM-DDTHH:mm" (not UTC — display is Thailand-local)
 export const nowLocalISO = () => {
   const parts = new Intl.DateTimeFormat('en-GB', {

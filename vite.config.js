@@ -29,6 +29,7 @@ function adminHtmlPlugin() {
 function localApiPlugin(env) {
   const routes = {
     '/api/auth/line': { file: 'api/_lib/lineExchange.js', fn: 'handleLineExchange' },
+    '/api/account/ensure': { file: 'api/_lib/accountNo.js', fn: 'handleEnsureAccount' },
     '/api/bookings/pay': { file: 'api/_lib/bookingPay.js', fn: 'handleBookingPay' },
     '/api/admin/slip': { file: 'api/_lib/slipView.js', fn: 'handleSlipView' },
     '/api/slots/taken': { file: 'api/_lib/slotsTaken.js', fn: 'handleSlotsTaken' },
