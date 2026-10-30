@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate, DICT } from '../i18n.js'
-import { isPeak, sortSlotItems } from '../data/index.js'
+import { isPeak, sortSlotItems, voucherCoverIndexes } from '../data/index.js'
 import { Icon, Modal, hourRangeLabel, printSlip } from '../components/ui.jsx'
 
 const SLIP_MAX_EDGE = 1600
@@ -205,7 +205,7 @@ export default function Booking({ cart, onDone, onBack }) {
   const { date, items: rawItems } = cart
   const items = sortSlotItems(rawItems, courts.map((c) => c.id))
 
-  const [voucherId, setVoucherId] = useState(null)
+  const [voucherIds, setVoucherIds] = useState([])
   const [step, setStep] = useState('summary')
   const [result, setResult] = useState(null)
   const [slipPreview, setSlipPreview] = useState('')
@@ -230,12 +230,8 @@ export default function Booking({ cart, onDone, onBack }) {
   })
   const subtotal = priced.reduce((s, x) => s + x.price, 0)
   const myVouchers = vouchers.filter((v) => v.userId === user?.id && !v.used && !v.revoked)
-  const cheapestOffPeakIdx = priced.reduce((best, it, i) => {
-    if (it.peak) return best
-    if (best < 0) return i
-    return it.price < priced[best].price ? i : best
-  }, -1)
-  const discount = voucherId && cheapestOffPeakIdx >= 0 ? (priced[cheapestOffPeakIdx]?.price ?? 0) : 0
+  const covered = new Set(voucherCoverIndexes(priced.map((p) => p.price), voucherIds.length))
+  const discount = priced.reduce((s, it, i) => s + (covered.has(i) ? it.price : 0), 0)
   const total = subtotal - discount
   // No hardcoded fallback: the server verifies the slip's receiver against
   // these exact settings, so showing an account it doesn't know would invite a
@@ -247,8 +243,11 @@ export default function Booking({ cart, onDone, onBack }) {
   const payReady = !!payNo || !!promptPayId
 
   const toggleVoucher = (id) => {
-    if (cheapestOffPeakIdx < 0) return
-    setVoucherId((cur) => (cur === id ? null : id))
+    setVoucherIds((cur) => {
+      if (cur.includes(id)) return cur.filter((x) => x !== id)
+      if (cur.length >= priced.length) return cur
+      return [...cur, id]
+    })
   }
 
   const clearSlip = () => {
@@ -269,7 +268,7 @@ export default function Booking({ cart, onDone, onBack }) {
   const finish = async (opts = {}) => {
     const r = await createMultiBooking(
       items.map((it) => ({ courtId: it.courtId, date, hour: it.hour })),
-      { voucherId, slip: opts.slip })
+      { voucherIds, slip: opts.slip })
     setResult(r)
     setStep('success')
     clearSlip()
@@ -386,7 +385,7 @@ export default function Booking({ cart, onDone, onBack }) {
               <div style={{ fontWeight: 700, fontSize: 13.5 }}>{lang === 'th' ? (it.court?.nameTh || '—') : (it.court?.name || '—')}</div>
               <div className="tiny">{fmtDate(date, lang)} · {hourRangeLabel(it.hour)} · {it.peak ? t('peak', lang) : t('offPeak', lang)}</div>
             </div>
-            {voucherId && i === cheapestOffPeakIdx ? (
+            {covered.has(i) ? (
               <span className="num" style={{ textAlign: 'right' }}>
                 <span style={{ textDecoration: 'line-through', opacity: 0.45, fontSize: 12 }}>฿{it.price}</span>
                 {' '}<b>{t('free', lang)}</b>
@@ -406,15 +405,17 @@ export default function Booking({ cart, onDone, onBack }) {
         )}
         <div className="col gap-2 mt-2">
           {myVouchers.map((v) => {
-            const on = voucherId === v.id
+            const on = voucherIds.includes(v.id)
+            const full = !on && voucherIds.length >= priced.length
             return (
               <div key={v.id} className="card-flat pad-3 row gap-2" style={{ alignItems: 'center' }}>
                 <div className="flex-1">
                   <div style={{ fontWeight: 700, fontSize: 14.5 }}>{t('codeHourOff', lang)}</div>
                   <div className="tiny">{t('codeNoExpiry', lang)}</div>
                 </div>
-                <button className={`btn btn-sm ${on ? 'btn-pine' : 'btn-lime'}`}
-                  disabled={cheapestOffPeakIdx < 0}
+                <button type="button" className={`btn btn-sm ${on ? 'btn-pine' : 'btn-lime'}`}
+                  style={{ minHeight: 44 }}
+                  disabled={full}
                   onClick={() => toggleVoucher(v.id)}>
                   {on ? `✓ ${t('promoApplied', lang)}` : t('tapUseCode', lang)}
                 </button>
@@ -422,9 +423,9 @@ export default function Booking({ cart, onDone, onBack }) {
             )
           })}
         </div>
-        {voucherId && <div className="chip chip-green mt-2">✓ {t('voucherApplied', lang)}</div>}
-        {myVouchers.length > 0 && cheapestOffPeakIdx < 0 && (
-          <div className="chip chip-amber mt-2">{t('voucherOffPeakOnly', lang)}</div>
+        {voucherIds.length > 0 && <div className="chip chip-green mt-2">✓ {t('voucherApplied', lang, { n: voucherIds.length })}</div>}
+        {myVouchers.length > priced.length && voucherIds.length >= priced.length && (
+          <div className="tiny mt-2">{t('voucherPickLimit', lang)}</div>
         )}
       </div>
 

@@ -14,6 +14,38 @@ const fmtCreated = (iso, lang) => {
 
 const slipErrKey = (code) => (DICT[`slipErr_${code}`] ? `slipErr_${code}` : 'slipErr_generic')
 
+function NameTip({ name, phone, lang }) {
+  const [pos, setPos] = useState(null)
+  const show = (e) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    const gap = 8
+    const flip = r.bottom + gap + 36 > window.innerHeight
+    setPos({
+      left: Math.max(8, Math.min(r.left, window.innerWidth - 168)),
+      top: flip ? r.top - gap : r.bottom + gap,
+      flip,
+    })
+  }
+  return (
+    <div
+      onMouseEnter={show}
+      onMouseLeave={() => setPos(null)}
+      style={{ width: 'fit-content', cursor: 'default' }}
+    >
+      {name || '—'}
+      {pos && (
+        <span
+          className="hover-tip"
+          role="tooltip"
+          style={{ left: pos.left, top: pos.top, transform: pos.flip ? 'translateY(-100%)' : undefined }}
+        >
+          {phone || t('noPhone', lang)}
+        </span>
+      )}
+    </div>
+  )
+}
+
 /**
  * Payment slips are private personal data: the bucket has no public access, so
  * this asks the server for a link that expires in minutes, and the server logs
@@ -198,7 +230,7 @@ export default function Bookings() {
                       <span className="row gap-2" style={{ alignItems: 'center' }}>
                         <AvatarGlyph avatar={m?.avatar} size={16} />
                         <span style={{ minWidth: 0 }}>
-                          <div>{m?.name || '—'}</div>
+                          <NameTip name={m?.name} phone={m?.phone} lang={lang} />
                           {m?.accountNo ? <div className="acct-no">{formatAccountNo(m.accountNo)}</div> : null}
                         </span>
                       </span>

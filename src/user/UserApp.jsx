@@ -1,7 +1,7 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
-import { formatAccountNo } from '../data/index.js'
+import { formatAccountNo, hasContactPhone } from '../data/index.js'
 import { Icon, Modal } from '../components/ui.jsx'
 import Logo from '../components/Logo.jsx'
 import Home from './Home.jsx'
@@ -17,12 +17,20 @@ export default function UserApp() {
   const [cart, setCart] = useState(null)         // { date, items: [{courtId, hour}] }
   const [afterLogin, setAfterLogin] = useState(null)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [phoneGate, setPhoneGate] = useState(false)
   const unread = notifications.filter((n) => !n.read).length
+  const needsPhone = !!(user && !hasContactPhone(user.phone))
+
+  useEffect(() => {
+    if (!needsPhone || screen === 'login' || screen === 'membership') return
+    setPhoneGate(true)
+  }, [needsPhone, screen])
 
   const goCheckout = (c) => {
     setCart(c)
     window.scrollTo(0, 0)
     if (!user) { setAfterLogin('booking'); setScreen('login') }
+    else if (needsPhone) { setPhoneGate(true); setScreen('membership') }
     else setScreen('booking')
   }
   const nav = (key) => {
@@ -91,6 +99,17 @@ export default function UserApp() {
           window.scrollTo(0, 0)
           setScreen(afterLogin && afterLogin !== 'login' ? afterLogin : 'home')
         }} />
+      )}
+
+      {phoneGate && needsPhone && (
+        <Modal onClose={() => { setPhoneGate(false); setScreen('membership') }}>
+          <h3 style={{ fontSize: 18 }}>{t('profileIncompleteTitle', lang)}</h3>
+          <p className="mt-2" style={{ fontSize: 14.5, lineHeight: 1.45 }}>{t('profileIncompleteBody', lang)}</p>
+          <button type="button" className="btn btn-lime btn-full mt-4" style={{ minHeight: 44 }}
+            onClick={() => { setPhoneGate(false); setScreen('membership') }}>
+            {t('profileIncompleteAccept', lang)}
+          </button>
+        </Modal>
       )}
 
       {notifOpen && (

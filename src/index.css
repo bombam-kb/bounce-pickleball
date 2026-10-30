@@ -334,6 +334,14 @@ a { color: inherit; }
   font-size: 13px; color: var(--ink); letter-spacing: 0.02em; line-height: 1.3;
 }
 .acct-no-lg { font-size: 16px; margin-top: 2px; }
+.hover-tip {
+  position: fixed; z-index: 80; pointer-events: none;
+  background: var(--ink); color: var(--cream);
+  border: 2px solid var(--stroke); border-radius: var(--r-md);
+  padding: 6px 10px; font-family: var(--font-display); font-weight: 700;
+  font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap;
+  box-shadow: var(--shadow-pop-sm);
+}
 .u-head-tools-end {
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
   margin-left: auto; flex-shrink: 0;

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
-import { memberMatches, formatAccountNo } from '../data/index.js'
+import { memberMatches, formatAccountNo, ADJUST_LIMIT } from '../data/index.js'
 import { Icon, Modal, ChannelChip, StampCard, AvatarGlyph, downloadCSV, usePager, Pager } from '../components/ui.jsx'
 
 export default function Members() {
@@ -63,7 +63,7 @@ export default function Members() {
         <div className="tbl-wrap">
           <table className="tbl">
             <thead><tr>
-              <th>{t('customer', lang)}</th><th>{t('channel', lang)}</th>
+              <th>{t('customer', lang)}</th><th>{t('mobilePhone', lang)}</th><th>{t('channel', lang)}</th>
               <th>{t('stamps', lang)}</th><th>{t('status', lang)}</th><th></th>
             </tr></thead>
             <tbody>
@@ -79,6 +79,7 @@ export default function Members() {
                       </div>
                     </div>
                   </td>
+                  <td className="num" style={{ whiteSpace: 'nowrap' }}>{x.phone || '—'}</td>
                   <td><ChannelChip channel={x.channel} /></td>
                   <td className="num">{x.stamps}/10</td>
                   <td>{x.suspended
@@ -114,7 +115,8 @@ export default function Members() {
             <span><AvatarGlyph avatar={m.avatar} size={34} /></span>
             <div className="flex-1">
               <h3 style={{ fontSize: 18 }}>{m.name}</h3>
-              <div className="tiny">{[m.email, m.phone].filter(Boolean).join(' · ') || '—'}</div>
+              <div className="tiny">{m.email || '—'}</div>
+              <div className="num mt-1" style={{ fontSize: 15 }}>{m.phone || '—'}</div>
               {m.accountNo ? <div className="acct-no acct-no-lg">{formatAccountNo(m.accountNo)}</div> : null}
             </div>
           </div>
@@ -142,8 +144,8 @@ export default function Members() {
           {!adjust && (
             <div className="act-row">
               <span className="act-label">{lang === 'th' ? 'จัดการ' : 'Actions'}</span>
-              <button className="btn btn-sm btn-lime" onClick={() => setAdjust({ kind: 'stamps', delta: 1, reason: '' })}><Icon name="ball" size={14} /> {t('adjustStamps', lang)}</button>
-              <button className="btn btn-sm" onClick={() => setAdjust({ kind: 'coupons', delta: unusedCoupons > 0 ? -1 : 1, reason: '' })}><Icon name="ticket" size={14} /> {t('adjustCoupons', lang)}</button>
+              <button className="btn btn-sm btn-lime" onClick={() => setAdjust({ kind: 'stamps', sign: 1, count: '1', reason: '' })}><Icon name="ball" size={14} /> {t('adjustStamps', lang)}</button>
+              <button className="btn btn-sm" onClick={() => setAdjust({ kind: 'coupons', sign: unusedCoupons > 0 ? -1 : 1, count: '1', reason: '' })}><Icon name="ticket" size={14} /> {t('adjustCoupons', lang)}</button>
               <button className={`btn btn-sm ${m.suspended ? '' : 'btn-danger'}`} onClick={() => toggleSuspend(m)}>
                 <Icon name={m.suspended ? 'check' : 'block'} size={14} />
                 {m.suspended ? t('unsuspend', lang) : t('suspend', lang)}
@@ -181,33 +183,51 @@ export default function Members() {
             </div>
           )}
 
-          {adjust && (
+          {adjust && (() => {
+            const count = Math.min(ADJUST_LIMIT, Math.max(0, parseInt(adjust.count, 10) || 0))
+            const maxDown = adjust.kind === 'coupons' ? unusedCoupons : (m.stamps || 0)
+            const blockedDown = adjust.sign < 0 && (count < 1 || count > maxDown)
+            return (
             <div className="card-flat pad-4 mt-4">
               <h4 style={{ fontSize: 14 }}>{adjust.kind === 'coupons' ? t('adjustCoupons', lang) : t('adjustStamps', lang)}</h4>
               {adjust.kind === 'coupons' && <p className="tiny mt-1">{t('couponAdjustHint', lang)} · {t('couponsLeft', lang)}: <b className="num">{unusedCoupons}</b></p>}
               <div className="row gap-2 mt-2">
-                {[-1, 1].map((d) => (
-                  <button key={d} type="button" className={`btn btn-sm ${adjust.delta === d ? 'btn-pine' : ''}`}
-                    style={{ minHeight: 44, minWidth: 52 }}
-                    disabled={adjust.kind === 'coupons' && d < 0 && unusedCoupons < 1}
-                    onClick={() => setAdjust((a) => ({ ...a, delta: d }))}>{d > 0 ? '+1' : '−1'}</button>
+                {[-1, 1].map((sign) => (
+                  <button key={sign} type="button" className={`btn btn-sm ${adjust.sign === sign ? 'btn-pine' : ''}`}
+                    style={{ minHeight: 44, minWidth: 72 }}
+                    disabled={sign < 0 && maxDown < 1}
+                    onClick={() => setAdjust((a) => ({ ...a, sign }))}>{sign > 0 ? t('adjustUp', lang) : t('adjustDown', lang)}</button>
                 ))}
               </div>
+              <label className="label mt-3">{t('adjustCount', lang)}</label>
+              <input className="input mt-1" inputMode="numeric" maxLength={2} value={adjust.count}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 2)
+                  const next = digits === '' ? '' : String(Math.min(ADJUST_LIMIT, parseInt(digits, 10)))
+                  setAdjust((a) => ({ ...a, count: next }))
+                }} />
               <input className="input mt-2" maxLength={120} placeholder={t('reason', lang)} value={adjust.reason}
                 onChange={(e) => setAdjust((a) => ({ ...a, reason: e.target.value }))} />
               <div className="row gap-2 mt-2">
-                <button className="btn btn-sm btn-lime" style={{ minHeight: 44 }} disabled={!adjust.reason || adjustBusy || (adjust.kind === 'coupons' && adjust.delta < 0 && unusedCoupons < 1)}
+                <button className="btn btn-sm btn-lime" style={{ minHeight: 44 }} disabled={!adjust.reason || adjustBusy || count < 1 || blockedDown}
                   onClick={async () => {
+                    const delta = adjust.sign * count
                     setAdjustBusy(true)
                     try {
-                      if (adjust.kind === 'coupons') {
-                        const r = await adminAdjustVouchers(m.id, adjust.delta, adjust.reason)
-                        if (r?.error === 'none') {
-                          alert(t('noCouponToReduce', lang))
-                          return
-                        }
-                      } else {
-                        await adminAdjustStamps(m.id, adjust.delta, adjust.reason)
+                      const r = adjust.kind === 'coupons'
+                        ? await adminAdjustVouchers(m.id, delta, adjust.reason)
+                        : await adminAdjustStamps(m.id, delta, adjust.reason)
+                      if (r?.error === 'short') {
+                        alert(t('notEnoughCoupons', lang, { n: r.have ?? 0 }))
+                        return
+                      }
+                      if (r?.error === 'none') {
+                        alert(adjust.kind === 'coupons' ? t('noCouponToReduce', lang) : t('noStampsToReduce', lang))
+                        return
+                      }
+                      if (r?.error) {
+                        alert(t('adjustFailed', lang))
+                        return
                       }
                       setAdjust(null)
                     } catch (e) {
@@ -220,7 +240,8 @@ export default function Members() {
                 <button className="btn btn-sm btn-ghost" style={{ minHeight: 44 }} onClick={() => setAdjust(null)}>{t('cancel', lang)}</button>
               </div>
             </div>
-          )}
+            )
+          })()}
         </Modal>
       )}
     </div>

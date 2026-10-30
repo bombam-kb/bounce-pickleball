@@ -11,6 +11,7 @@ import {
 import { auth, db, firebaseReady } from './firebase.js'
 import {
   genRef, todayISO, isPeak, nowLocalISO, sortSlotItems, SEED_SETTINGS, SEED_PAYOUT,
+  normalizePhone, hasContactPhone, ADJUST_LIMIT,
 } from './data/index.js'
 import { sanitizeLegalHtml } from './legalHtml.js'
 
@@ -269,6 +270,16 @@ export function StoreProvider({ children }) {
     }
   }, [])
 
+  // Only the phone field. Stamps, bookings and coupons on this account are left alone.
+  const saveMyPhone = useCallback(async (phone) => {
+    if (!firebaseReady || !user) return { error: 'auth' }
+    const digits = normalizePhone(phone)
+    if (!hasContactPhone(digits)) return { error: 'badphone' }
+    await updateDoc(doc(db, 'members', user.id), { phone: digits })
+    setUser((u) => (u && u.id === user.id ? { ...u, phone: digits } : u))
+    return { ok: true }
+  }, [user])
+
   const logout = useCallback(async () => {
     try { if (firebaseReady && auth.currentUser) await signOut(auth) } catch { /* ignore */ }
     setUser(null)
@@ -287,16 +298,18 @@ export function StoreProvider({ children }) {
     setNotifications((ns) => ns.map((n) => (n.read ? n : { ...n, read: true }))), [])
 
   // ── email auth via Firebase Auth (verification is a link Firebase emails) ──
-  const registerEmail = useCallback(async (name, email, password) => {
+  const registerEmail = useCallback(async (name, email, password, phone) => {
     if (!firebaseReady) return { error: 'notconfigured' }
     const em = email.trim().toLowerCase()
+    const digits = normalizePhone(phone)
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return { error: 'bademail' }
     if (password.length < 8) return { error: 'shortpass' }
+    if (!hasContactPhone(digits)) return { error: 'badphone' }
     try {
       const cred = await createUserWithEmailAndPassword(auth, em, password)
       try { await updateProfile(cred.user, { displayName: name.trim() }) } catch { /* non-fatal */ }
       const member = {
-        name: name.trim(), email: em, phone: '', channel: 'email',
+        name: name.trim(), email: em, phone: digits, channel: 'email',
         country: lang === 'th' ? 'TH' : '—', lang, avatar: '🏓',
         stamps: 0, bookingsYear: 0, suspended: false,
         joined: todayISO(), birthday: null,
@@ -440,25 +453,28 @@ export function StoreProvider({ children }) {
   // reads the current member from the live snapshot (single-shot; callers that
   // add several stamps at once must batch the math themselves — see below).
   const addStamp = useCallback(async (userId, note, delta = 1, by = 'system') => {
-    if (!firebaseReady) return false
+    if (!firebaseReady) return { applied: 0, issued: 0 }
     const member = members.find((m) => m.id === userId)
-    if (!member) return false
+    if (!member) return { applied: 0, issued: 0 }
+    const before = member.stamps || 0
+    // A removal cannot go below zero, and it never takes back a coupon already issued.
+    const applied = delta < 0 ? Math.max(delta, -before) : delta
+    if (!applied) return { applied: 0, issued: 0 }
     const batch = writeBatch(db)
-    batch.set(doc(db, 'stampLog', nid('s')), { userId, date: todayISO(), delta, note, by })
-    let stamps = (member.stamps || 0) + delta
+    batch.set(doc(db, 'stampLog', nid('s')), { userId, date: todayISO(), delta: applied, note, by })
+    let stamps = before + applied
     let issued = 0
     while (stamps >= 10) { stamps -= 10; issued += 1 }
     if (stamps < 0) stamps = 0
-    batch.update(doc(db, 'members', userId), {
-      stamps, bookingsYear: delta > 0 ? (member.bookingsYear || 0) + 1 : member.bookingsYear,
-    })
+    // Admin adjustments must not change "bookings this year" — that count is real checkouts only.
+    batch.update(doc(db, 'members', userId), { stamps })
     for (let k = 0; k < issued; k += 1) {
-      batch.set(doc(db, 'vouchers', nid('v')), {
+      batch.set(doc(db, 'vouchers', nid('v') + k.toString(36)), {
         userId, issued: todayISO(), expiry: null, used: false, source: 'stamps',
       })
     }
     await batch.commit()
-    return issued > 0
+    return { applied, issued }
   }, [members])
 
   // ── multi-slot checkout — runs entirely on the server (`/api/bookings/pay`).
@@ -466,10 +482,10 @@ export function StoreProvider({ children }) {
   // ownership and stamp math are all decided there, and Firestore rules block
   // customer writes to bookings/vouchers/stampLog. `slip` is a data-URL of the
   // transfer slip and is required whenever the server total is above ฿0. ──
-  const createMultiBooking = useCallback(async (items, { voucherId, slip } = {}) => {
+  const createMultiBooking = useCallback(async (items, { voucherIds, slip } = {}) => {
     const res = await apiPost('/api/bookings/pay', {
       items: items.map((it) => ({ courtId: it.courtId, date: it.date, hour: it.hour })),
-      voucherId: voucherId || '',
+      voucherIds: voucherIds || [],
       slip: slip || '',
     })
     const newBookings = res.bookings || []
@@ -611,41 +627,51 @@ export function StoreProvider({ children }) {
   }, [courts, members, bookings, logAdmin, lang])
 
   const adminAdjustStamps = useCallback(async (userId, delta, reason) => {
-    await addStamp(userId, `Admin adjust: ${reason}`, delta, 'admin')
-    await logAdmin(`Adjust stamps ${delta > 0 ? '+' : ''}${delta} for ${userId} — ${reason}`)
+    if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > ADJUST_LIMIT) return { error: 'bad' }
+    const result = await addStamp(userId, `Admin adjust: ${reason}`, delta, 'admin')
+    if (!result?.applied) return { error: 'none' }
+    await logAdmin(`Adjust stamps ${result.applied > 0 ? '+' : ''}${result.applied} for ${userId} — ${reason}`)
+    return { ok: true, applied: result.applied, issued: result.issued }
   }, [addStamp, logAdmin])
 
   // Add one free-hour code, or revoke one unused code. Revoked codes are
   // marked used so checkout rejects them, and `revoked` keeps them out of
   // the customer's "used" list.
   const adminAdjustVouchers = useCallback(async (userId, delta, reason) => {
-    if (delta !== 1 && delta !== -1) return { error: 'bad' }
+    if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > ADJUST_LIMIT) return { error: 'bad' }
     const member = members.find((m) => m.id === userId)
     const who = member?.accountNo ? `${member.name} (No. ${member.accountNo})` : (member?.name || userId)
     if (delta > 0) {
-      await setDoc(doc(db, 'vouchers', nid('v')), {
-        userId, issued: todayISO(), expiry: null, used: false, source: 'admin', note: reason,
-      })
+      const batch = writeBatch(db)
+      for (let k = 0; k < delta; k += 1) {
+        batch.set(doc(db, 'vouchers', nid('v') + k.toString(36)), {
+          userId, issued: todayISO(), expiry: null, used: false, source: 'admin', note: reason,
+        })
+      }
+      await batch.commit()
     } else {
       const snap = await getDocs(query(collection(db, 'vouchers'), where('userId', '==', userId)))
       const unused = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((v) => !v.used && !v.revoked)
         .sort((a, b) => String(b.issued || '').localeCompare(String(a.issued || '')) || b.id.localeCompare(a.id))
-      const target = unused[0]
-      if (!target) return { error: 'none' }
+      const want = -delta
+      if (unused.length < want) return { error: 'short', have: unused.length }
+      const targets = unused.slice(0, want)
       const revoked = await runTransaction(db, async (tx) => {
-        const fresh = await tx.get(doc(db, 'vouchers', target.id))
-        if (!fresh.exists() || fresh.data()?.used || fresh.data()?.revoked) return false
-        tx.update(fresh.ref, {
+        const fresh = []
+        for (const target of targets) fresh.push(await tx.get(doc(db, 'vouchers', target.id)))
+        if (fresh.some((d) => !d.exists() || d.data()?.used || d.data()?.revoked)) return false
+        fresh.forEach((d) => tx.update(d.ref, {
           used: true, revoked: true, revokedAt: todayISO(), revokedReason: reason,
-        })
+        }))
         return true
       })
+      // Used coupons and past bookings stay as they are. A race just asks staff to try again.
       if (!revoked) return { error: 'none' }
     }
     await logAdmin(`Adjust coupons ${delta > 0 ? '+' : ''}${delta} for ${who} — ${reason}`)
-    return { ok: true }
+    return { ok: true, applied: delta }
   }, [members, logAdmin])
 
   // Move bookings / codes / stamps from one member onto another (LINE channel switch).
@@ -690,7 +716,7 @@ export function StoreProvider({ children }) {
     courts, members, bookings, vouchers, stampLog, settings, adminLog,
     saveCourt, deleteCourt, updateCourt, updateMember, saveSettings,
     logAdmin,
-    user, completeLineLogin, logout, isAdmin, adminLogin, adminLogout, resetDemo,
+    user, completeLineLogin, logout, saveMyPhone, isAdmin, adminLogin, adminLogout, resetDemo,
     registerEmail, loginEmail, requestReset, resendVerification,
     notifications, notify, markNotifsRead,
     slotStatus, loadTakenSlots, createMultiBooking, cancelBooking, fetchSlipUrl,

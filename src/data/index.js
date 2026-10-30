@@ -25,6 +25,32 @@ export const genRef = () => 'BNC-' + Math.random().toString(36).slice(2, 8).toUp
 /** Shop account number, shown as on the member card: "No. 10001". */
 export const formatAccountNo = (n) => (n ? `No. ${n}` : '')
 
+/** Digits only, capped so a pasted paragraph cannot become a phone number. */
+export const normalizePhone = (raw) => String(raw || '').replace(/\D/g, '').slice(0, 15)
+
+/** A callback number the shop can dial. Existing empty profiles stay empty until the person saves one. */
+export const hasContactPhone = (raw) => {
+  const digits = normalizePhone(raw)
+  return digits.length >= 9 && digits.length <= 15
+}
+
+/** Staff can add or remove several stamps or coupons in one action, not an unbounded amount. */
+export const ADJUST_LIMIT = 30
+
+/**
+ * Slots a checkout's coupons make free. One coupon covers one hour, peak included.
+ * The most expensive hours are covered first so a peak slot can take a coupon.
+ * Same function on the server, so the price the customer sees is the price that is charged.
+ */
+export const voucherCoverIndexes = (prices, count) => {
+  const n = Math.max(0, Math.min(prices.length, count | 0))
+  return prices
+    .map((price, i) => ({ i, price: Number(price) || 0 }))
+    .sort((a, b) => b.price - a.price || a.i - b.i)
+    .slice(0, n)
+    .map((x) => x.i)
+}
+
 /** Name, email, phone, account number, or id. "No. 10001" matches 10001. */
 export const memberMatches = (m, q) => {
   const raw = String(q || '').trim().toLowerCase()

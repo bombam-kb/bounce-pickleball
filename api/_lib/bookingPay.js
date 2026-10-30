@@ -11,7 +11,8 @@
  *   • a slip's `transRef` can be applied to exactly one checkout
  *     (`payments/{ref}` and any live booking with that `slipTransRef`)
  *   • `payMethod` is derived here, so nobody can self-serve a `counter` booking
- *   • a voucher must belong to the caller and still be unused
+ *   • each voucher must belong to the caller and still be unused
+ *   • one voucher covers one hour, including peak; several may cover one checkout
  *
  * Firestore rules block customer writes to bookings/vouchers/stampLog, so this
  * handler (Admin SDK) is the single writer. See FIREBASE_SETUP.md.
@@ -20,7 +21,7 @@ import admin from 'firebase-admin'
 import {
   getEnv, initAdmin, readJsonBody, jsonSender, verifyCustomer, storageBucket, newId,
 } from './serverAdmin.js'
-import { isPeak, sortSlotItems, genRef, todayISO, nowLocalISO } from '../../src/data/index.js'
+import { isPeak, sortSlotItems, genRef, todayISO, nowLocalISO, voucherCoverIndexes } from '../../src/data/index.js'
 
 const MAX_ITEMS = 12
 const MAX_SLIP_BYTES = 3 * 1024 * 1024
@@ -74,6 +75,21 @@ function normalizeItems(raw) {
     if (out.length >= MAX_ITEMS) break
   }
   return out
+}
+
+/** Several coupons per checkout. Still accepts the old single `voucherId`. */
+function normalizeVoucherIds(body) {
+  const raw = Array.isArray(body?.voucherIds)
+    ? body.voucherIds
+    : (body?.voucherId ? [body.voucherId] : [])
+  const ids = []
+  for (const id of raw) {
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) continue
+    if (ids.includes(id)) continue
+    ids.push(id)
+    if (ids.length >= MAX_ITEMS) break
+  }
+  return ids
 }
 
 function dataUrlToBase64(image) {
@@ -259,8 +275,7 @@ export async function handleBookingPay(req, res) {
   }
 
   const items = normalizeItems(body.items)
-  const voucherId = typeof body.voucherId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(body.voucherId)
-    ? body.voucherId : ''
+  const voucherIds = normalizeVoucherIds(body)
   const slipBase64 = dataUrlToBase64(body.slip)
   if (!items.length) { send(400, { error: 'badrequest' }); return }
   if (slipBase64.length > MAX_SLIP_BYTES) { send(413, { error: 'slip_too_big' }); return }
@@ -297,24 +312,18 @@ export async function handleBookingPay(req, res) {
       return { ...it, base }
     })
 
-    // ── voucher must be the caller's own, unused, and cover an off-peak slot ──
-    if (voucherId) {
-      const vSnap = await db.collection('vouchers').doc(voucherId).get()
+    // ── each voucher is the caller's own and unused. Peak hours are allowed.
+    // Checked before the slip is sent, so a bad coupon never takes a payment. ──
+    if (voucherIds.length > priced.length) throw httpError(400, 'voucher_invalid')
+    for (const id of voucherIds) {
+      const vSnap = await db.collection('vouchers').doc(id).get()
       const v = vSnap.exists ? (vSnap.data() || {}) : null
       if (!v || v.userId !== uid || v.used || v.revoked) throw httpError(400, 'voucher_invalid')
       if (v.expiry && v.expiry < todayISO()) throw httpError(400, 'voucher_invalid')
     }
-    const cheapestIdx = voucherId
-      ? priced.reduce((best, it, i) => {
-          const court = courts.find((c) => c.id === it.courtId)
-          if (isPeak(it.hour, court)) return best
-          if (best < 0) return i
-          return it.base < priced[best].base ? i : best
-        }, -1)
-      : -1
-    if (voucherId && cheapestIdx < 0) throw httpError(400, 'voucher_peak')
+    const covered = new Set(voucherCoverIndexes(priced.map((it) => it.base), voucherIds.length))
     const lines = priced.map((it, i) => {
-      const discount = i === cheapestIdx ? it.base : 0
+      const discount = covered.has(i) ? it.base : 0
       return { ...it, discount, total: it.base - discount }
     })
     const total = lines.reduce((s, l) => s + l.total, 0)
@@ -347,10 +356,10 @@ export async function handleBookingPay(req, res) {
       price: l.base,
       discount: l.discount,
       total: l.total,
-      payMethod: i === cheapestIdx ? 'voucher' : 'promptpay',
+      payMethod: covered.has(i) ? 'voucher' : 'promptpay',
       status: 'upcoming',
       createdAt,
-      voucherUsed: i === cheapestIdx,
+      voucherUsed: covered.has(i),
       ...(payment ? { slipTransRef: payment.transRef, slipPath: objectPath, slipExpiresAt } : {}),
     }))
 
@@ -368,10 +377,12 @@ export async function handleBookingPay(req, res) {
           throw httpError(409, '1012')
         }
       }
-      const vRef = voucherId ? db.collection('vouchers').doc(voucherId) : null
-      if (vRef) {
-        const v = await tx.get(vRef)
-        if (!v.exists || v.data()?.userId !== uid || v.data()?.used || v.data()?.revoked) throw httpError(400, 'voucher_invalid')
+      const vSnaps = []
+      for (const id of voucherIds) vSnaps.push(await tx.get(db.collection('vouchers').doc(id)))
+      for (const v of vSnaps) {
+        const data = v.exists ? (v.data() || {}) : null
+        if (!data || data.userId !== uid || data.used || data.revoked) throw httpError(400, 'voucher_invalid')
+        if (data.expiry && data.expiry < todayISO()) throw httpError(400, 'voucher_invalid')
       }
       const dates = [...new Set(lines.map((l) => l.date))]
       const live = new Set()
@@ -393,7 +404,7 @@ export async function handleBookingPay(req, res) {
         const { id, ...data } = b
         tx.set(db.collection('bookings').doc(id), data)
       })
-      if (vRef) tx.update(vRef, { used: true, usedAt: createdAt, usedForRef: bookingRef })
+      vSnaps.forEach((v) => tx.update(v.ref, { used: true, usedAt: createdAt, usedForRef: bookingRef }))
 
       const stamped = bookings.filter((b) => !b.voucherUsed)
       if (stamped.length) {

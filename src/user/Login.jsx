@@ -13,11 +13,11 @@ const LineLogo = () => (
 
 // top-level so React keeps input identity across renders (inline definition
 // would remount the input on every keystroke and drop focus)
-const Field = ({ label, type = 'text', value, onChange, placeholder, maxLength = 60 }) => (
+const Field = ({ label, type = 'text', value, onChange, placeholder, maxLength = 60, inputMode }) => (
   <div>
     <label className="label">{label}</label>
     <input className="input" type={type} value={value} onChange={onChange}
-      placeholder={placeholder} maxLength={maxLength} autoComplete="off" />
+      placeholder={placeholder} maxLength={maxLength} autoComplete="off" inputMode={inputMode} />
   </div>
 )
 
@@ -27,6 +27,7 @@ const ERR = {
   exists: { th: 'Email นี้ถูกใช้แล้ว — ลองเข้าสู่ระบบ', en: 'Email already registered — try logging in' },
   notfound: { th: 'ไม่พบบัญชีนี้', en: 'Account not found' },
   badpass: { th: 'Email หรือรหัสผ่านไม่ถูกต้อง', en: 'Wrong email or password' },
+  badphone: { th: 'กรอกเบอร์ติดต่อกลับให้ครบ อย่างน้อย 9 หลัก', en: 'Enter a callback number, at least 9 digits' },
   notverified: { th: 'ยังไม่ได้ยืนยัน Email — เช็คลิงก์ในกล่องจดหมาย', en: 'Email not verified yet — check your inbox for the link' },
   suspended: { th: 'บัญชีนี้ถูกระงับ — ติดต่อเจ้าหน้าที่', en: 'Account suspended — contact staff' },
   mismatch: { th: 'รหัสผ่านทั้งสองช่องไม่ตรงกัน', en: 'Passwords do not match' },
@@ -49,7 +50,7 @@ const CheckMail = ({ title, body, email }) => (
 export default function Login({ onDone }) {
   const { lang, switchLang, registerEmail, loginEmail, requestReset, resendVerification } = useStore()
   const [mode, setMode] = useState('menu') // menu | elogin | eregister | echeck | ereset | eresetsent
-  const [f, setF] = useState({ name: '', email: '', pass: '', pass2: '' })
+  const [f, setF] = useState({ name: '', email: '', phone: '', pass: '', pass2: '' })
   const [err, setErr] = useState(null)
   const [note, setNote] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -68,7 +69,7 @@ export default function Login({ onDone }) {
 
   const doRegister = async () => {
     if (f.pass !== f.pass2) { setErr('mismatch'); return }
-    const r = await run(() => registerEmail(f.name, f.email, f.pass))
+    const r = await run(() => registerEmail(f.name, f.email, f.pass, f.phone))
     if (r.error) setErr(r.error)
     else setMode('echeck')
   }
@@ -149,11 +150,12 @@ export default function Login({ onDone }) {
           {backBtn('elogin')}
           <Field label={th ? 'ชื่อ - นามสกุล' : 'Full name'} value={f.name} onChange={set('name')} placeholder={th ? 'ชื่อของคุณ' : 'Your name'} />
           <Field label="Email" type="email" value={f.email} onChange={set('email')} placeholder="you@example.com" />
+          <Field label={th ? 'เบอร์ติดต่อกลับ' : 'Callback number'} type="tel" inputMode="numeric" value={f.phone} onChange={set('phone')} placeholder="0812345678" maxLength={15} />
           <Field label={th ? 'รหัสผ่าน (อย่างน้อย 8 ตัว)' : 'Password (min 8 chars)'} type="password" value={f.pass} onChange={set('pass')} maxLength={64} />
           <Field label={th ? 'ยืนยันรหัสผ่าน' : 'Confirm password'} type="password" value={f.pass2} onChange={set('pass2')} maxLength={64} />
           {errChip}
           <button className="btn btn-lime btn-lg btn-full" onClick={doRegister}
-            disabled={busy || !f.name || !f.email || !f.pass || !f.pass2}>
+            disabled={busy || !f.name || !f.email || !f.phone || !f.pass || !f.pass2}>
             {busy ? (th ? 'กำลังสมัคร…' : 'Signing up…') : (th ? 'สมัครสมาชิก' : 'Sign up')}
           </button>
         </div>
