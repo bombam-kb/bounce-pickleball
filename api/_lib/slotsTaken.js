@@ -8,10 +8,16 @@
  * hour facts with no `userId`, price, reference or slip data attached.
  */
 import admin from 'firebase-admin'
-import { initAdmin, readJsonBody, jsonSender, verifyCustomer } from './serverAdmin.js'
+import {
+  initAdmin, readJsonBody, jsonSender, verifyCaller, clientIp, rateLimitDocId,
+  assertRateLimit, bumpRateLimit,
+} from './serverAdmin.js'
 
 const MAX_DATES = 31
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+// Visitors who are not signed in still need to see which hours are gone.
+// Several customers can share the shop wifi, so the per-IP cap is generous.
+const ANON_LIMIT = { limit: 600, windowMs: 10 * 60 * 1000, error: 'too_many' }
 
 /**
  * @param {import('http').IncomingMessage} req
@@ -33,10 +39,18 @@ export async function handleSlotsTaken(req, res) {
     return
   }
 
-  const caller = await verifyCustomer(req)
-  if (!caller.uid) {
-    send(caller.reason === 'unverified' ? 403 : 401, { error: caller.reason })
-    return
+  // The answer holds court, date and hour only, so a sign-in is not required.
+  // Anonymous callers are throttled per IP.
+  const uid = await verifyCaller(req)
+  if (!uid) {
+    const limitId = rateLimitDocId('slots_ip', clientIp(req))
+    try {
+      await assertRateLimit(db, limitId, ANON_LIMIT)
+    } catch (e) {
+      send(e.status || 429, { error: e.code || 'too_many' })
+      return
+    }
+    await bumpRateLimit(db, limitId, ANON_LIMIT)
   }
 
   let body

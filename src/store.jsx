@@ -364,21 +364,27 @@ export function StoreProvider({ children }) {
 
   // ── authenticated call to our own /api/* handlers.
   // Rejects with an Error whose `code` is the server's `error` string. ──
-  const apiPost = useCallback(async (url, payload) => {
+  const apiPost = useCallback(async (url, payload, { optionalAuth = false } = {}) => {
     const current = firebaseReady ? auth.currentUser : null
-    if (!current) throw Object.assign(new Error('auth'), { code: 'auth' })
-    let token
-    try {
-      token = await current.getIdToken()
-    } catch {
-      throw Object.assign(new Error('auth'), { code: 'auth' })
+    if (!current && !optionalAuth) throw Object.assign(new Error('auth'), { code: 'auth' })
+    let token = ''
+    if (current) {
+      try {
+        token = await current.getIdToken()
+      } catch {
+        if (!optionalAuth) throw Object.assign(new Error('auth'), { code: 'auth' })
+      }
     }
     let res
     try {
       res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(payload || {}),
+        cache: 'no-store',
       })
     } catch {
       throw Object.assign(new Error('network'), { code: 'network' })
@@ -412,11 +418,13 @@ export function StoreProvider({ children }) {
   // bookings, so which slots *other* people took comes from /api/slots/taken —
   // court, date and hour only, no names or amounts. Staff already hold the
   // full `bookings` snapshot and don't need the call.
+  // Waits for auth to settle, and changes identity when the signed-in user does,
+  // so the grid asks again once login finishes instead of keeping an empty answer.
   const loadTakenSlots = useCallback(async (dates) => {
     const want = [...new Set((dates || []).filter(Boolean))]
-    if (!want.length || isAdmin) return
+    if (!want.length || isAdmin || (firebaseReady && !authReady)) return
     try {
-      const res = await apiPost('/api/slots/taken', { dates: want })
+      const res = await apiPost('/api/slots/taken', { dates: want }, { optionalAuth: true })
       setTakenSlots((prev) => {
         const next = new Set(prev)
         // drop the stale view of these dates before re-adding, so a cancelled
@@ -433,7 +441,7 @@ export function StoreProvider({ children }) {
     } catch (e) {
       console.error('[Bounce] taken slots', e)
     }
-  }, [apiPost, isAdmin])
+  }, [apiPost, isAdmin, authReady, authUid])
 
   // slot status for a court/date/hour
   const slotStatus = useCallback((court, date, hour) => {

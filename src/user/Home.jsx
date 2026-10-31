@@ -7,6 +7,8 @@ import { Icon, CalendarModal } from '../components/ui.jsx'
 import { TermsReadGate } from '../components/LegalHtml.jsx'
 import { legalHasText, pickLegal } from '../legalHtml.js'
 
+const TAKEN_REFRESH_MS = 20000
+
 export default function Home({ onCheckout, cartHost }) {
   const { lang, courts, slotStatus, loadTakenSlots, settings } = useStore()
   const [date, setDate] = useState(todayISO())
@@ -20,14 +22,33 @@ export default function Home({ onCheckout, cartHost }) {
   useEffect(() => { setSelected([]) }, [date])
 
   // who booked what is not ours to read, so ask the server which slots on this
-  // day are gone. Re-checked when the tab regains focus so a slot someone else
-  // took while we were away doesn't still look free.
+  // day are gone. Phones often skip `focus` when switching apps, so also ask on
+  // visibility, on a back/forward restore, and on a short timer while visible.
   useEffect(() => {
-    loadTakenSlots([date])
-    const onFocus = () => loadTakenSlots([date])
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
+    const refresh = () => { if (document.visibilityState !== 'hidden') loadTakenSlots([date]) }
+    refresh()
+    const timer = window.setInterval(refresh, TAKEN_REFRESH_MS)
+    window.addEventListener('focus', refresh)
+    window.addEventListener('pageshow', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('pageshow', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
   }, [date, loadTakenSlots])
+
+  // a slot someone else just took cannot stay in the cart
+  useEffect(() => {
+    setSelected((sel) => {
+      const next = sel.filter((s) => {
+        const court = courts.find((c) => c.id === s.courtId)
+        return court && slotStatus(court, date, s.hour) === 'free'
+      })
+      return next.length === sel.length ? sel : next
+    })
+  }, [slotStatus, courts, date])
 
   const activeCourts = courts.filter((c) => c.active)
   const openHour = activeCourts.length ? Math.min(...activeCourts.map((c) => c.open)) : 0
