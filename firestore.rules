@@ -69,7 +69,13 @@ service cloud.firestore {
     // The booking grid gets other people's occupied slots from
     // `/api/slots/taken`, which returns court/date/hour and nothing else.
     match /bookings/{id} { allow read: if isAdmin() || ownRow(); allow write: if isAdmin(); }
-    match /vouchers/{id} { allow read: if isAdmin() || ownRow(); allow write: if isAdmin(); }
+    // a coupon's received date and expiry are fixed when it is issued
+    match /vouchers/{id} {
+      allow read: if isAdmin() || ownRow();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['issued', 'expiry', 'expiryDays']);
+    }
     match /stampLog/{id} { allow read: if isAdmin() || ownRow(); allow write: if isAdmin(); }
 
     // verified slip payments — staff-readable audit trail, server-written only

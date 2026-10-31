@@ -2,6 +2,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { assertStaging } from './scripts/lib/envTarget.mjs'
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url))
 
@@ -60,7 +61,9 @@ function localApiPlugin(env) {
 }
 
 export default defineConfig(({ mode }) => {
+  if (mode === 'staging') assertStaging(rootDir)
   const env = loadEnv(mode, process.cwd(), '')
+  if (mode === 'staging') env.BOUNCE_ENV = 'staging'
   return {
     plugins: [adminHtmlPlugin(), react(), localApiPlugin(env)],
     build: {

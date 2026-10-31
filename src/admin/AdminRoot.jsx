@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import { StoreProvider } from '../store.jsx'
-import { firebaseReady } from '../firebase.js'
+import { firebaseReady, isTestDatabase } from '../firebase.js'
 import { goAdminSite, goCustomerSite, isAdminHost, mustMoveToAdminOrigin } from '../origins.js'
 import AdminApp from './AdminApp.jsx'
 
@@ -27,6 +27,7 @@ export default function AdminRoot() {
         </div>
       )}
       <AdminApp goUser={goCustomerSite} />
+      {isTestDatabase && <div className="env-badge" role="status">TEST DB</div>}
     </StoreProvider>
   )
 }

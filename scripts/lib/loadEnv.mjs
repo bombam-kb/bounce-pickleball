@@ -1,22 +1,26 @@
-import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readEnvFile, assertStaging } from './envTarget.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-/** Load `.env` into process.env without overwriting values already set. */
-export function loadDotEnv() {
-  const file = join(root, '.env')
-  if (!existsSync(file)) return
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/)
-    if (!m) continue
-    let v = m[2].trim()
-    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-      v = v.slice(1, -1)
-    }
-    if (process.env[m[1]] == null || process.env[m[1]] === '') process.env[m[1]] = v
+/** `BOUNCE_ENV=staging` targets the test project; anything else is the live one. */
+export const isStaging = () => process.env.BOUNCE_ENV === 'staging'
+
+function apply(vars) {
+  for (const [k, v] of Object.entries(vars)) {
+    if (process.env[k] == null || process.env[k] === '') process.env[k] = v
   }
+}
+
+/**
+ * Load env files into process.env without overwriting values already set.
+ * In staging, `.env.staging` is checked first and loaded ahead of `.env`, so
+ * shared keys such as LINE or SlipOK still come from `.env`.
+ */
+export function loadDotEnv() {
+  if (isStaging()) apply(assertStaging(root))
+  apply(readEnvFile(join(root, '.env')))
 }
 
 export function projectRoot() {

@@ -18,6 +18,7 @@ export default function UserApp() {
   const [afterLogin, setAfterLogin] = useState(null)
   const [notifOpen, setNotifOpen] = useState(false)
   const [phoneGate, setPhoneGate] = useState(false)
+  const [heldVoucherId, setHeldVoucherId] = useState(null)
   const unread = notifications.filter((n) => !n.read).length
   const needsPhone = !!(user && !hasContactPhone(user.phone))
 
@@ -88,12 +89,14 @@ export default function UserApp() {
       </header>
       )}
 
-      {screen === 'home' && <Home onCheckout={goCheckout} cartHost={cartHost} />}
+      {screen === 'home' && <Home onCheckout={goCheckout} cartHost={cartHost} codeHeld={!!heldVoucherId} />}
       {screen === 'booking' && cart && (
-        <Booking cart={cart} onBack={() => setScreen('home')} onDone={() => { setCart(null); setScreen('bookings') }} />
+        <Booking cart={cart} initialVoucherId={heldVoucherId} onBack={() => setScreen('home')} onDone={() => { setCart(null); setHeldVoucherId(null); setScreen('bookings') }} />
       )}
       {screen === 'bookings' && user && <MyBookings />}
-      {screen === 'membership' && user && <Membership />}
+      {screen === 'membership' && user && (
+        <Membership onUseVoucher={(id) => { setHeldVoucherId(id); window.scrollTo(0, 0); setScreen('home') }} />
+      )}
       {screen === 'login' && (
         <Login onDone={() => {
           window.scrollTo(0, 0)

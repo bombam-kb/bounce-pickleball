@@ -5,7 +5,9 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.staging.example
 service-account.json
+service-account.*.json
 *-firebase-adminsdk*.json
 .vscode/
 .idea/

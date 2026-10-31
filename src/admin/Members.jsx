@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useStore } from '../store.jsx'
 import { t, fmtDate } from '../i18n.js'
-import { memberMatches, formatAccountNo, ADJUST_LIMIT } from '../data/index.js'
+import { memberMatches, formatAccountNo, ADJUST_LIMIT, voucherExpired } from '../data/index.js'
 import { Icon, Modal, ChannelChip, StampCard, AvatarGlyph, downloadCSV, usePager, Pager } from '../components/ui.jsx'
 
 export default function Members() {
@@ -23,7 +23,7 @@ export default function Members() {
 
   const m = detail ? members.find((x) => x.id === detail) : null
   const unusedCoupons = m
-    ? vouchers.filter((v) => v.userId === m.id && !v.used && !v.revoked).length
+    ? vouchers.filter((v) => v.userId === m.id && !v.used && !v.revoked && !voucherExpired(v)).length
     : 0
 
   const exportCsv = () => {

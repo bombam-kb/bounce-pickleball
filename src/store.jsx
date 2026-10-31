@@ -11,7 +11,7 @@ import {
 import { auth, db, firebaseReady } from './firebase.js'
 import {
   genRef, todayISO, isPeak, nowLocalISO, sortSlotItems, SEED_SETTINGS, SEED_PAYOUT,
-  normalizePhone, hasContactPhone, ADJUST_LIMIT,
+  normalizePhone, hasContactPhone, ADJUST_LIMIT, newVoucherDates, voucherExpired,
 } from './data/index.js'
 import { sanitizeLegalHtml } from './legalHtml.js'
 
@@ -478,12 +478,12 @@ export function StoreProvider({ children }) {
     batch.update(doc(db, 'members', userId), { stamps })
     for (let k = 0; k < issued; k += 1) {
       batch.set(doc(db, 'vouchers', nid('v') + k.toString(36)), {
-        userId, issued: todayISO(), expiry: null, used: false, source: 'stamps',
+        userId, ...newVoucherDates(settings), used: false, source: 'stamps',
       })
     }
     await batch.commit()
     return { applied, issued }
-  }, [members])
+  }, [members, settings])
 
   // ── multi-slot checkout — runs entirely on the server (`/api/bookings/pay`).
   // The browser only says *what* it wants; price, slip verification, voucher
@@ -623,8 +623,8 @@ export function StoreProvider({ children }) {
       userId: uid, date: todayISO(), delta: 1, note: `Admin booking ${b.ref} (phone/walk-in)`, by: 'admin',
     }))
     for (let k = 0; k < earned; k += 1) {
-      batch.set(doc(db, 'vouchers', nid('v')), {
-        userId: uid, issued: todayISO(), expiry: null, used: false, source: 'stamps',
+      batch.set(doc(db, 'vouchers', nid('v') + k.toString(36)), {
+        userId: uid, ...newVoucherDates(settings), used: false, source: 'stamps',
       })
     }
 
@@ -632,7 +632,7 @@ export function StoreProvider({ children }) {
     const who = existing?.name ?? guest?.name ?? uid
     await logAdmin(`Booked ${newBookings.length} slot(s) for ${who}${guest && !userId ? ' (guest)' : ''} — ${lang === 'th' ? 'จองให้ลูกค้า (โทร/walk-in)' : 'manual booking (phone/walk-in)'}`)
     return newBookings
-  }, [courts, members, bookings, logAdmin, lang])
+  }, [courts, members, bookings, logAdmin, lang, settings])
 
   const adminAdjustStamps = useCallback(async (userId, delta, reason) => {
     if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > ADJUST_LIMIT) return { error: 'bad' }
@@ -653,7 +653,7 @@ export function StoreProvider({ children }) {
       const batch = writeBatch(db)
       for (let k = 0; k < delta; k += 1) {
         batch.set(doc(db, 'vouchers', nid('v') + k.toString(36)), {
-          userId, issued: todayISO(), expiry: null, used: false, source: 'admin', note: reason,
+          userId, ...newVoucherDates(settings), used: false, source: 'admin', note: reason,
         })
       }
       await batch.commit()
@@ -661,7 +661,7 @@ export function StoreProvider({ children }) {
       const snap = await getDocs(query(collection(db, 'vouchers'), where('userId', '==', userId)))
       const unused = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((v) => !v.used && !v.revoked)
+        .filter((v) => !v.used && !v.revoked && !voucherExpired(v))
         .sort((a, b) => String(b.issued || '').localeCompare(String(a.issued || '')) || b.id.localeCompare(a.id))
       const want = -delta
       if (unused.length < want) return { error: 'short', have: unused.length }
@@ -680,7 +680,7 @@ export function StoreProvider({ children }) {
     }
     await logAdmin(`Adjust coupons ${delta > 0 ? '+' : ''}${delta} for ${who} — ${reason}`)
     return { ok: true, applied: delta }
-  }, [members, logAdmin])
+  }, [members, logAdmin, settings])
 
   // Move bookings / codes / stamps from one member onto another (LINE channel switch).
   const adminMergeMembers = useCallback(async (fromId, intoId) => {
@@ -709,15 +709,15 @@ export function StoreProvider({ children }) {
       bookingsYear: (into.bookingsYear || 0) + (from.bookingsYear || 0),
     })
     for (let k = 0; k < earned; k += 1) {
-      batch.set(doc(db, 'vouchers', nid('v')), {
-        userId: intoId, issued: todayISO(), expiry: null, used: false, source: 'stamps',
+      batch.set(doc(db, 'vouchers', nid('v') + k.toString(36)), {
+        userId: intoId, ...newVoucherDates(settings), used: false, source: 'stamps',
       })
     }
     batch.delete(doc(db, 'members', fromId))
     await batch.commit()
     await logAdmin(`Merge member ${from.name} (${fromId}) → ${into.name} (${intoId})`)
     return { ok: true }
-  }, [members, logAdmin])
+  }, [members, logAdmin, settings])
 
   const value = {
     lang, switchLang, firebaseReady, authReady,

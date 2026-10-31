@@ -18,6 +18,9 @@ const firebaseConfig = {
 // enough config present to connect?
 export const firebaseReady = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId)
 
+/** `npm run dev` connects to the test project, never the live one. */
+export const isTestDatabase = import.meta.env.MODE === 'staging'
+
 let app = null
 let auth = null
 let db = null

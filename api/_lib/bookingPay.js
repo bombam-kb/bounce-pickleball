@@ -21,7 +21,9 @@ import admin from 'firebase-admin'
 import {
   getEnv, initAdmin, readJsonBody, jsonSender, verifyCustomer, storageBucket, newId,
 } from './serverAdmin.js'
-import { isPeak, sortSlotItems, genRef, todayISO, nowLocalISO, voucherCoverIndexes } from '../../src/data/index.js'
+import {
+  isPeak, sortSlotItems, genRef, todayISO, nowLocalISO, voucherCoverIndexes, newVoucherDates, voucherExpired,
+} from '../../src/data/index.js'
 
 const MAX_ITEMS = 12
 const MAX_SLIP_BYTES = 3 * 1024 * 1024
@@ -319,7 +321,7 @@ export async function handleBookingPay(req, res) {
       const vSnap = await db.collection('vouchers').doc(id).get()
       const v = vSnap.exists ? (vSnap.data() || {}) : null
       if (!v || v.userId !== uid || v.used || v.revoked) throw httpError(400, 'voucher_invalid')
-      if (v.expiry && v.expiry < todayISO()) throw httpError(400, 'voucher_invalid')
+      if (voucherExpired(v)) throw httpError(400, 'voucher_invalid')
     }
     const covered = new Set(voucherCoverIndexes(priced.map((it) => it.base), voucherIds.length))
     const lines = priced.map((it, i) => {
@@ -382,7 +384,7 @@ export async function handleBookingPay(req, res) {
       for (const v of vSnaps) {
         const data = v.exists ? (v.data() || {}) : null
         if (!data || data.userId !== uid || data.used || data.revoked) throw httpError(400, 'voucher_invalid')
-        if (data.expiry && data.expiry < todayISO()) throw httpError(400, 'voucher_invalid')
+        if (voucherExpired(data)) throw httpError(400, 'voucher_invalid')
       }
       const dates = [...new Set(lines.map((l) => l.date))]
       const live = new Set()
@@ -421,7 +423,7 @@ export async function handleBookingPay(req, res) {
         }))
         for (let k = 0; k < earned; k += 1) {
           tx.set(db.collection('vouchers').doc(newId('v')), {
-            userId: uid, issued: todayISO(), expiry: null, used: false, source: 'stamps',
+            userId: uid, ...newVoucherDates(settings), used: false, source: 'stamps',
           })
         }
       }

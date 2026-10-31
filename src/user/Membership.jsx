@@ -1,18 +1,40 @@
 import React, { useEffect, useState } from 'react'
 import { useStore } from '../store.jsx'
-import { t, fmtDate } from '../i18n.js'
+import { t, fmtDate, fmtDateYear } from '../i18n.js'
 import { StampCard, ChannelChip, Icon, AvatarGlyph, Modal } from '../components/ui.jsx'
 import { LegalHtml } from '../components/LegalHtml.jsx'
 import { legalHasText, pickLegal } from '../legalHtml.js'
-import { formatAccountNo, hasContactPhone } from '../data/index.js'
+import { formatAccountNo, hasContactPhone, isoDay, voucherUsedDayMap, voucherExpired } from '../data/index.js'
 
-export default function Membership() {
-  const { lang, user, vouchers, stampLog, logout, settings, saveMyPhone } = useStore()
+const usedOnLabel = (day, lang) => (
+  day ? t('voucherUsedOn', lang, { d: fmtDateYear(day, lang) }) : t('voucherUsedPlain', lang)
+)
+
+const expiryLabel = (v, lang) => {
+  const day = isoDay(v.expiry)
+  if (!day) return t('voucherNoExpiry', lang)
+  return voucherExpired(v)
+    ? t('voucherExpiredOn', lang, { d: fmtDateYear(day, lang) })
+    : t('voucherValidUntil', lang, { d: fmtDateYear(day, lang) })
+}
+
+export default function Membership({ onUseVoucher }) {
+  const { lang, user, vouchers, bookings, stampLog, logout, settings, saveMyPhone } = useStore()
   const myVouchers = vouchers.filter((v) => v.userId === user.id && !v.revoked)
+  const usedDay = voucherUsedDayMap(myVouchers, bookings)
+  const readyCodes = myVouchers
+    .filter((v) => !v.used && !voucherExpired(v))
+    .sort((a, b) => String(a.expiry || '9999').localeCompare(String(b.expiry || '9999'))
+      || String(b.issued || '').localeCompare(String(a.issued || '')))
+  const historyDay = (v) => (v.used ? usedDay.get(v.id) || '' : isoDay(v.expiry))
+  const usedCodes = myVouchers
+    .filter((v) => v.used || voucherExpired(v))
+    .sort((a, b) => historyDay(b).localeCompare(historyDay(a)))
   const myLog = stampLog.filter((s) => s.userId === user.id)
   const payTerms = pickLegal(settings, 'payTerms', lang)
   const appTerms = pickLegal(settings, 'appTerms', lang)
   const [tab, setTab] = useState('history')
+  const [codeTab, setCodeTab] = useState('ready')
   const [phone, setPhone] = useState(user.phone || '')
   const [phoneMsg, setPhoneMsg] = useState(null)
   const [phoneBusy, setPhoneBusy] = useState(false)
@@ -141,19 +163,53 @@ export default function Membership() {
       </div>
 
       <h3 className="mt-6" style={{ fontSize: 16 }}>{t('vouchers', lang)}</h3>
-      <div className="col gap-3 mt-2">
-        {myVouchers.length === 0 && <div className="card-flat pad-4 tc tiny">{t('noVouchers', lang)}</div>}
-        {myVouchers.map((v) => (
-          <div key={v.id} className={`ticket ${v.used ? 'used' : ''}`}>
+      <div className="tabs tabs-split mt-2" role="tablist">
+        <button type="button" role="tab" aria-selected={codeTab === 'ready'}
+          className={`tab ${codeTab === 'ready' ? 'on' : ''}`}
+          onClick={() => setCodeTab('ready')}>
+          {t('voucherTabReady', lang)}{readyCodes.length ? ` ${readyCodes.length}` : ''}
+        </button>
+        <button type="button" role="tab" aria-selected={codeTab === 'used'}
+          className={`tab ${codeTab === 'used' ? 'on' : ''}`}
+          onClick={() => setCodeTab('used')}>
+          {t('voucherTabUsed', lang)}{usedCodes.length ? ` ${usedCodes.length}` : ''}
+        </button>
+      </div>
+      <div className="col gap-3 mt-3">
+        {codeTab === 'ready' && readyCodes.length === 0 && (
+          <div className="card-flat pad-4 tc tiny">{usedCodes.length === 0 ? t('noVouchers', lang) : t('noReadyVouchers', lang)}</div>
+        )}
+        {codeTab === 'used' && usedCodes.length === 0 && (
+          <div className="card-flat pad-4 tc tiny">{t('noUsedVouchers', lang)}</div>
+        )}
+        {(codeTab === 'ready' ? readyCodes : usedCodes).map((v) => {
+          const done = v.used || voucherExpired(v)
+          const issued = isoDay(v.issued)
+          return (
+          <div key={v.id} className={`ticket ${done ? 'used' : ''}`}>
             <div className="ticket-left">{t('free', lang)}</div>
             <div className="pad-4 flex-1">
               <strong style={{ fontFamily: 'var(--font-display)' }}>{t('voucherFreeBooking', lang)}</strong>
-              <div className="tiny mt-1">
-                {v.used ? (lang === 'th' ? 'ใช้แล้ว' : 'Used') : t('codeNoExpiry', lang)}
+              {v.used && (
+                <div className="tiny mt-1" style={{ fontWeight: 700, color: 'var(--ink-2)' }}>
+                  {usedOnLabel(usedDay.get(v.id) || isoDay(v.usedAt), lang)}
+                </div>
+              )}
+              <div className="voucher-dates mt-1">
+                {issued && <span>{t('voucherIssuedOn', lang, { d: fmtDateYear(issued, lang) })}</span>}
+                <span className={!v.used && voucherExpired(v) ? 'is-expired' : ''}>{expiryLabel(v, lang)}</span>
+                {!done && <span>{t('voucherAnyHour', lang)}</span>}
               </div>
+              {!done && (
+                <button type="button" className="btn btn-lime btn-full mt-3" style={{ minHeight: 44 }}
+                  onClick={() => onUseVoucher?.(v.id)}>
+                  {t('tapUseCode', lang)}
+                </button>
+              )}
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       <div className="tabs tabs-split mt-6" role="tablist">

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store.jsx'
-import { t, fmtDate, DICT } from '../i18n.js'
-import { isPeak, sortSlotItems, voucherCoverIndexes } from '../data/index.js'
+import { t, fmtDate, fmtDateYear, DICT } from '../i18n.js'
+import { isPeak, sortSlotItems, voucherCoverIndexes, voucherExpired, isoDay } from '../data/index.js'
 import { Icon, Modal, hourRangeLabel, printSlip } from '../components/ui.jsx'
 
 const SLIP_MAX_EDGE = 1600
@@ -200,7 +200,7 @@ function payErrorKey(code) {
 }
 
 // step: summary → qr (if promptpay) → success
-export default function Booking({ cart, onDone, onBack }) {
+export default function Booking({ cart, onDone, onBack, initialVoucherId }) {
   const { lang, courts, user, vouchers, createMultiBooking, settings } = useStore()
   const { date, items: rawItems } = cart
   const items = sortSlotItems(rawItems, courts.map((c) => c.id))
@@ -214,6 +214,7 @@ export default function Booking({ cart, onDone, onBack }) {
   const [slipErr, setSlipErr] = useState('')
   const fileRef = useRef(null)
   const pickGen = useRef(0)
+  const seededVoucher = useRef(false)
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -229,7 +230,17 @@ export default function Booking({ cart, onDone, onBack }) {
     return { ...it, court, peak, price: peak ? (court?.pricePeak ?? 0) : (court?.priceOff ?? 0) }
   })
   const subtotal = priced.reduce((s, x) => s + x.price, 0)
-  const myVouchers = vouchers.filter((v) => v.userId === user?.id && !v.used && !v.revoked)
+  const myVouchers = vouchers
+    .filter((v) => v.userId === user?.id && !v.used && !v.revoked && !voucherExpired(v))
+    .sort((a, b) => String(a.expiry || '9999').localeCompare(String(b.expiry || '9999')))
+  useEffect(() => {
+    if (seededVoucher.current || !initialVoucherId || !priced.length) return
+    if (!myVouchers.some((v) => v.id === initialVoucherId)) return
+    seededVoucher.current = true
+    setVoucherIds((cur) => (
+      cur.includes(initialVoucherId) || cur.length >= priced.length ? cur : [initialVoucherId, ...cur]
+    ))
+  }, [initialVoucherId, myVouchers, priced.length])
   const covered = new Set(voucherCoverIndexes(priced.map((p) => p.price), voucherIds.length))
   const discount = priced.reduce((s, it, i) => s + (covered.has(i) ? it.price : 0), 0)
   const total = subtotal - discount
@@ -411,7 +422,11 @@ export default function Booking({ cart, onDone, onBack }) {
               <div key={v.id} className="card-flat pad-3 row gap-2" style={{ alignItems: 'center' }}>
                 <div className="flex-1">
                   <div style={{ fontWeight: 700, fontSize: 14.5 }}>{t('codeHourOff', lang)}</div>
-                  <div className="tiny">{t('codeNoExpiry', lang)}</div>
+                  <div className="tiny">
+                    {isoDay(v.expiry)
+                      ? `${t('voucherAnyHour', lang)} · ${t('voucherValidUntil', lang, { d: fmtDateYear(isoDay(v.expiry), lang) })}`
+                      : t('codeNoExpiry', lang)}
+                  </div>
                 </div>
                 <button type="button" className={`btn btn-sm ${on ? 'btn-pine' : 'btn-lime'}`}
                   style={{ minHeight: 44 }}

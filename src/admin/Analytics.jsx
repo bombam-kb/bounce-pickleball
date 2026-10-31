@@ -1,7 +1,7 @@
 import React from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
-import { todayISO, isPeak } from '../data/index.js'
+import { todayISO, isPeak, voucherExpired } from '../data/index.js'
 import { ChannelChip, hourLabel, useDateRange, DateRangeBar, Icon, AvatarGlyph, downloadCSV } from '../components/ui.jsx'
 
 const BarRow = ({ label, value, max, suffix = '', color = 'var(--lime)' }) => (
@@ -60,7 +60,7 @@ export default function Analytics() {
     .filter((x) => x.n > 0)
     .sort((a, b) => b.n - a.n)
     .slice(0, 5)
-  const vouchersActive = vouchers.filter((v) => !v.used && !v.revoked).length
+  const vouchersActive = vouchers.filter((v) => !v.used && !v.revoked && !voucherExpired(v)).length
   const vouchersUsed = vouchers.filter((v) => v.used && !v.revoked).length
   const vouchersIssuedInRange = vouchers.filter((v) => v.issued >= range.from && v.issued <= range.to).length
 

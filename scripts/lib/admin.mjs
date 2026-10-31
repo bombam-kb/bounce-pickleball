@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import admin from 'firebase-admin'
-import { loadDotEnv, projectRoot } from './loadEnv.mjs'
+import { loadDotEnv, projectRoot, isStaging } from './loadEnv.mjs'
 
 loadDotEnv()
 
@@ -28,6 +28,7 @@ export function initAdmin() {
   if (admin.apps.length) return admin.app()
   const sa = loadServiceAccount()
   const projectId = env('VITE_FB_PROJECT_ID') || env('FB_PROJECT_ID') || sa.project_id
+  console.log(`[firebase] ${projectId}${isStaging() ? ' (test)' : ' (LIVE)'}`)
   return admin.initializeApp({
     credential: admin.credential.cert(sa),
     projectId,

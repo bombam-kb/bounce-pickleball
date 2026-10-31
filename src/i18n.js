@@ -152,6 +152,27 @@ export const DICT = {
   voucherFreeBooking: { th: 'โค้ดฟรี 1 ชม.', en: '1 free hour' },
   expires: { th: 'หมดอายุ', en: 'Expires' },
   noVouchers: { th: 'ยังไม่มีโค้ด — สะสมแสตมป์ให้ครบ 10!', en: 'No codes yet — collect 10 stamps!' },
+  voucherTabReady: { th: 'พร้อมใช้', en: 'Ready' },
+  voucherTabUsed: { th: 'ประวัติ', en: 'History' },
+  voucherUsedOn: { th: 'ใช้เมื่อ {d}', en: 'Used {d}' },
+  voucherUsedPlain: { th: 'ใช้แล้ว', en: 'Used' },
+  noReadyVouchers: { th: 'ยังไม่มีโค้ดพร้อมใช้', en: 'No codes ready to use' },
+  noUsedVouchers: { th: 'ยังไม่มีโค้ดที่ใช้แล้ว', en: 'No used codes yet' },
+  voucherHeld: { th: 'โค้ดฟรีจะถูกใช้เมื่อยืนยันการจอง', en: 'Your free code applies when you confirm the booking' },
+  voucherIssuedOn: { th: 'ได้รับ {d}', en: 'Received {d}' },
+  voucherValidUntil: { th: 'ใช้ได้ถึง {d}', en: 'Valid until {d}' },
+  voucherExpiredOn: { th: 'หมดอายุแล้ว {d}', en: 'Expired {d}' },
+  voucherNoExpiry: { th: 'ไม่มีวันหมดอายุ', en: 'No expiry' },
+  voucherAnyHour: { th: 'ใช้ได้ทุกช่วงเวลา', en: 'Valid any hour' },
+  voucherExpiryTitle: { th: 'วันหมดอายุคูปอง', en: 'Coupon expiry' },
+  voucherExpiryHint: { th: 'ใช้กับคูปองที่ออกหลังจากบันทึกเท่านั้น คูปองที่ลูกค้าได้ไปแล้วไม่เปลี่ยน', en: 'Applies only to coupons issued after you save. Coupons customers already hold keep their dates.' },
+  voucherExpiryNever: { th: 'ไม่มีวันหมดอายุ', en: 'Never expires' },
+  voucherExpiryAfter: { th: 'หมดอายุหลังได้รับ', en: 'Expires after issue' },
+  voucherExpiryDaysLabel: { th: 'ใช้ได้กี่วันหลังได้รับ', en: 'Days valid after issue' },
+  voucherExpiryNow: { th: 'ตอนนี้: คูปองใหม่ใช้ได้ {n} วันหลังได้รับ', en: 'Now: new coupons are valid {n} days after issue' },
+  voucherExpiryNowNever: { th: 'ตอนนี้: คูปองใหม่ไม่มีวันหมดอายุ', en: 'Now: new coupons never expire' },
+  voucherExpiryBad: { th: 'ใส่จำนวนวัน 1–{n}', en: 'Enter 1–{n} days' },
+  days: { th: 'วัน', en: 'days' },
   stampHistory: { th: 'ประวัติแสตมป์', en: 'Stamp History' },
   profileTabTerms: { th: 'เงื่อนไข', en: 'Terms' },
   profileTabHistory: { th: 'ประวัติ', en: 'History' },
@@ -334,4 +355,12 @@ export const MONTH_NAMES = {
 export const fmtDate = (iso, lang) => {
   const d = new Date(iso + 'T00:00:00')
   return `${DAY_NAMES[lang][d.getDay()]} ${d.getDate()} ${MONTH_NAMES[lang][d.getMonth()]}`
+}
+
+/** Date with year, for coupon dates that can fall in another year. Thai uses the Buddhist year. */
+export const fmtDateYear = (iso, lang) => {
+  const d = new Date(String(iso).slice(0, 10) + 'T00:00:00')
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear() + (lang === 'th' ? 543 : 0)
+  return `${d.getDate()} ${MONTH_NAMES[lang][d.getMonth()]} ${y}`
 }

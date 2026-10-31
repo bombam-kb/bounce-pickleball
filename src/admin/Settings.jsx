@@ -2,7 +2,80 @@ import React, { useState, useEffect } from 'react'
 import { useStore } from '../store.jsx'
 import { t } from '../i18n.js'
 import { legalHasText } from '../legalHtml.js'
+import { voucherExpiryDays, VOUCHER_EXPIRY_MAX_DAYS } from '../data/index.js'
 import LegalEditor from './LegalEditor.jsx'
+
+function VoucherExpiryCard({ settings, saveSettings, logAdmin, lang }) {
+  const current = voucherExpiryDays(settings)
+  const [mode, setMode] = useState(current ? 'days' : 'never')
+  const [days, setDays] = useState(current ? String(current) : '30')
+  const [msg, setMsg] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const d = voucherExpiryDays(settings)
+    setMode(d ? 'days' : 'never')
+    setDays(d ? String(d) : '30')
+  }, [settings.voucherExpiryDays])
+
+  const n = Number(days)
+  const valid = mode === 'never' || (Number.isInteger(n) && n >= 1 && n <= VOUCHER_EXPIRY_MAX_DAYS)
+  const next = mode === 'never' ? 0 : n
+  const changed = valid && next !== current
+
+  const save = async () => {
+    if (!valid) { setMsg('bad'); return }
+    setBusy(true)
+    setMsg(null)
+    try {
+      await saveSettings({ ...settings, voucherExpiryDays: next })
+      await logAdmin(next ? `Coupon expiry: ${next} days after issue (new coupons only)` : 'Coupon expiry: none (new coupons only)')
+      setMsg('ok')
+    } catch {
+      setMsg('fail')
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div className="card pad-5 mt-4" style={{ maxWidth: 640 }}>
+      <h3 style={{ fontSize: 15 }}>{t('voucherExpiryTitle', lang)}</h3>
+      <p className="tiny mt-1">{t('voucherExpiryHint', lang)}</p>
+      <div className="tabs tabs-split mt-3" role="radiogroup" aria-label={t('voucherExpiryTitle', lang)}>
+        <button type="button" role="radio" aria-checked={mode === 'never'}
+          className={`tab ${mode === 'never' ? 'on' : ''}`}
+          onClick={() => { setMode('never'); setMsg(null) }}>
+          {t('voucherExpiryNever', lang)}
+        </button>
+        <button type="button" role="radio" aria-checked={mode === 'days'}
+          className={`tab ${mode === 'days' ? 'on' : ''}`}
+          onClick={() => { setMode('days'); setMsg(null) }}>
+          {t('voucherExpiryAfter', lang)}
+        </button>
+      </div>
+      {mode === 'days' && (
+        <div className="mt-3">
+          <label className="label" htmlFor="voucher-expiry-days">{t('voucherExpiryDaysLabel', lang)}</label>
+          <div className="row gap-2">
+            <input id="voucher-expiry-days" className="input num" style={{ maxWidth: 140 }}
+              type="number" inputMode="numeric" min="1" max={VOUCHER_EXPIRY_MAX_DAYS}
+              value={days} onChange={(e) => { setDays(e.target.value.replace(/\D/g, '')); setMsg(null) }} />
+            <span>{t('days', lang)}</span>
+          </div>
+        </div>
+      )}
+      <p className="tiny mt-3">
+        {current
+          ? t('voucherExpiryNow', lang, { n: current })
+          : t('voucherExpiryNowNever', lang)}
+      </p>
+      <button className="btn btn-lime btn-lg mt-3" disabled={busy || !changed} onClick={save}>{t('save', lang)}</button>
+      {msg === 'ok' && <span className="chip chip-green mt-2">✓ {lang === 'th' ? 'บันทึกแล้ว' : 'Saved'}</span>}
+      {msg === 'bad' && <span className="chip chip-red mt-2">{t('voucherExpiryBad', lang, { n: VOUCHER_EXPIRY_MAX_DAYS })}</span>}
+      {msg === 'fail' && <span className="chip chip-red mt-2">{t('adjustFailed', lang)}</span>}
+    </div>
+  )
+}
 
 function LegalLangPair({ field, form, set, lang }) {
   return (
@@ -93,6 +166,8 @@ export default function Settings() {
           {saved && <span className="chip chip-green">✓ {lang === 'th' ? 'บันทึกแล้ว' : 'Saved'}</span>}
         </div>
       </div>
+
+      <VoucherExpiryCard settings={settings} saveSettings={saveSettings} logAdmin={logAdmin} lang={lang} />
 
       <div className="card pad-5 mt-4" style={{ maxWidth: 640 }}>
         <h3 style={{ fontSize: 15 }}>{t('payTermsTitle', lang)}</h3>

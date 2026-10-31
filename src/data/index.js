@@ -37,6 +37,26 @@ export const hasContactPhone = (raw) => {
 /** Staff can add or remove several stamps or coupons in one action, not an unbounded amount. */
 export const ADJUST_LIMIT = 30
 
+export const VOUCHER_EXPIRY_MAX_DAYS = 3650
+
+/** Days a new coupon stays valid, from shop settings. 0 means it never expires. */
+export const voucherExpiryDays = (settings) => {
+  const n = Number(settings?.voucherExpiryDays)
+  return Number.isInteger(n) && n > 0 && n <= VOUCHER_EXPIRY_MAX_DAYS ? n : 0
+}
+
+/**
+ * Dates fixed on a coupon when it is issued. The expiry is a calendar day, so a later
+ * settings change never moves a coupon the customer already holds.
+ */
+export const newVoucherDates = (settings, today = todayISO()) => {
+  const days = voucherExpiryDays(settings)
+  return { issued: today, expiry: days ? addDays(today, days) : null, expiryDays: days || null }
+}
+
+/** Usable through its expiry day; expired from the next day. */
+export const voucherExpired = (v, today = todayISO()) => !!(v?.expiry && String(v.expiry) < today)
+
 /**
  * Slots a checkout's coupons make free. One coupon covers one hour, peak included.
  * The most expensive hours are covered first so a peak slot can take a coupon.
@@ -49,6 +69,74 @@ export const voucherCoverIndexes = (prices, count) => {
     .sort((a, b) => b.price - a.price || a.i - b.i)
     .slice(0, n)
     .map((x) => x.i)
+}
+
+/** "YYYY-MM-DD" from a stored date or "YYYY-MM-DDTHH:mm". Empty when it is not a date. */
+export const isoDay = (raw) => {
+  if (raw == null || raw === '') return ''
+  if (typeof raw === 'string') {
+    const day = raw.slice(0, 10)
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : ''
+  }
+  if (typeof raw.toDate === 'function') return isoDay(raw.toDate().toISOString().slice(0, 10))
+  return ''
+}
+
+/**
+ * Day each used coupon was redeemed. Newer coupons store usedAt. Older ones only
+ * flipped used to true, so the day comes from the booking that spent the coupon.
+ * Nothing is written back.
+ */
+export const voucherUsedDayMap = (vouchers, bookings) => {
+  const map = new Map()
+  const claimedRefs = new Set()
+  const list = Array.isArray(vouchers) ? vouchers : []
+  const rows = Array.isArray(bookings) ? bookings : []
+  for (const v of list) {
+    if (!v?.used || !v.id) continue
+    const direct = isoDay(v.usedAt)
+    if (direct) {
+      map.set(v.id, direct)
+      if (v.usedForRef) claimedRefs.add(v.usedForRef)
+      continue
+    }
+    if (!v.usedForRef) continue
+    const hits = rows.filter((b) => b.ref === v.usedForRef && b.voucherUsed)
+    const b = hits.find((x) => x.status !== 'cancelled') || hits[0]
+    const day = isoDay(b?.createdAt) || isoDay(b?.date)
+    if (!day) continue
+    map.set(v.id, day)
+    claimedRefs.add(v.usedForRef)
+  }
+  const missing = list
+    .filter((v) => v?.used && v.id && !map.has(v.id))
+    .sort((a, b) => String(a.issued || '').localeCompare(String(b.issued || '')) || String(a.id).localeCompare(String(b.id)))
+  const pool = []
+  const seen = new Set()
+  const open = rows
+    .filter((b) => b?.voucherUsed && b.ref && !claimedRefs.has(b.ref))
+    .sort((a, b) => String(a.createdAt || a.date || '').localeCompare(String(b.createdAt || b.date || '')))
+  for (const b of open) {
+    if (seen.has(b.ref)) continue
+    seen.add(b.ref)
+    pool.push(b)
+  }
+  const taken = new Set()
+  for (const v of missing) {
+    const issued = isoDay(v.issued)
+    let pick = pool.findIndex((b) => {
+      if (taken.has(b.ref)) return false
+      const day = isoDay(b.createdAt) || isoDay(b.date)
+      return !issued || !day || day >= issued
+    })
+    if (pick < 0) pick = pool.findIndex((b) => !taken.has(b.ref))
+    if (pick < 0) continue
+    const b = pool[pick]
+    taken.add(b.ref)
+    const day = isoDay(b.createdAt) || isoDay(b.date)
+    if (day) map.set(v.id, day)
+  }
+  return map
 }
 
 /** Name, email, phone, account number, or id. "No. 10001" matches 10001. */

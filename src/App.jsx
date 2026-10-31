@@ -1,6 +1,6 @@
 import React, { useEffect, Suspense, lazy } from 'react'
 import { StoreProvider } from './store.jsx'
-import { firebaseReady } from './firebase.js'
+import { firebaseReady, isTestDatabase } from './firebase.js'
 import Logo from './components/Logo.jsx'
 import { goAdminSite, adminOrigin } from './origins.js'
 
@@ -44,6 +44,7 @@ export default function CustomerApp() {
       <Suspense fallback={<Loading />}>
         {isLineCallback() ? <LineCallback /> : <UserApp />}
       </Suspense>
+      {isTestDatabase && <div className="env-badge" role="status">TEST DB</div>}
     </StoreProvider>
   )
 }

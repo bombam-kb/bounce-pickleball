@@ -9,7 +9,7 @@ import { legalHasText, pickLegal } from '../legalHtml.js'
 
 const TAKEN_REFRESH_MS = 20000
 
-export default function Home({ onCheckout, cartHost }) {
+export default function Home({ onCheckout, cartHost, codeHeld = false }) {
   const { lang, courts, slotStatus, loadTakenSlots, settings } = useStore()
   const [date, setDate] = useState(todayISO())
   const [calOpen, setCalOpen] = useState(false)
@@ -134,6 +134,7 @@ export default function Home({ onCheckout, cartHost }) {
         <h3 style={{ fontSize: 16 }}>{t('pickSlot', lang)} · {fmtDate(date, lang)}</h3>
       </div>
       <p className="tiny muted mt-1">{t('selectHint', lang)}</p>
+      {codeHeld && <p className="tiny mt-2">{t('voucherHeld', lang)}</p>}
       <div className="legend mt-2">
         <span><i style={{ background: 'var(--paper)' }} />{t('slotFree', lang)}</span>
         <span><i style={{ background: 'var(--lime-soft)' }} />{t('peak', lang)}</span>
